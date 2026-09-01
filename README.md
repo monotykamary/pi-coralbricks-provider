@@ -1,44 +1,81 @@
-# pi-coralbricks-provider
+<div align="center">
 
-[Coral Bricks](https://www.coralbricks.ai) provider extension for [pi](https://github.com/badlogic/pi-mono) — GLM 5.2/5.3, Kimi K3, and GPT-OSS 120B through the Coral Inference API with up to **1M token context**.
+# 🪸 pi-coralbricks-provider
+
+**GLM 5.2/5.3, Kimi K3 & GPT-OSS 120B through [Coral Bricks](https://www.coralbricks.ai)**
+
+_A [pi](https://github.com/earendil-works/pi-coding-agent) provider extension for Coral's OpenAI-compatible inference gateway — up to **1M context** on open models._
+
+[![pi extension](https://img.shields.io/badge/pi-extension-blueviolet)](https://github.com/earendil-works/pi-coding-agent)
+[![npm](https://img.shields.io/npm/v/pi-coralbricks-provider)](https://www.npmjs.com/package/pi-coralbricks-provider)
+[![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+[![synbad](https://img.shields.io/badge/synbad-evals_passing-brightgreen)](https://github.com/synthetic-lab/synbad)
+
+</div>
+
+---
 
 ## Features
 
-- **OpenAI-compatible**: uses the `openai-completions` API against `https://inference.coralbricks.ai/v1`
-- **Stale-while-revalidate model sync**: embedded `models.json` loads instantly; the live catalog (`/v1/models`, or the unauthenticated [public catalog](https://www.coralbricks.ai/api/public/models) before auth) hot-swaps in on session start and self-heals pricing
-- **Accurate costs**: pricing mirrors Coral's published per-million rates. Cached reads are billed at **$0** on every Coral model, so `cacheRead` is 0 across the catalog — pi's computed cost matches Coral's own `usage.cost`
-- **Thinking levels wired per model family** (see table below)
-- **Grace-period deprecation**: delisted models keep working for 14 days via `deprecated-models.json`
-- **Patches & custom models**: `patch.json` overrides and `custom-models.json` additions applied on every load
+- **4 reasoning models** from Coral's DynamoDB-backed live catalog — GLM 5.2 FP4, GLM 5.3 FP4, Kimi K3, and GPT-OSS 120B
+- **1M token context** on GLM and Kimi, with vision (image input) on Kimi K3
+- **OpenAI-compatible API** — standard `/v1/chat/completions`, streaming, and tool calling
+- **Per-family thinking levels** — zai-style `thinking` control for GLM (including a *real* off switch), `reasoning_effort` for Kimi K3 and GPT-OSS
+- **Accurate cost tracking** — pricing mirrors Coral's published rates, and cached reads are **$0 on every model**, so pi's computed cost matches Coral's own `usage.cost` to the token
+- **Self-healing model sync** — stale-while-revalidate from the authenticated `/v1/models` (or the unauthenticated [public catalog](https://www.coralbricks.ai/api/public/models) before auth), hot-swapped at session start
+- **Streaming repair** — transparently fixes Coral's gpt-oss tool-call delta index fragmentation so streamed tool calls always accumulate correctly
+- **synbad-validated** — [synbad](https://github.com/synthetic-lab/synbad) tool-calling and reasoning-parsing evals pass 15/15 on GLM 5.2, GLM 5.3, and Kimi K3 in both unary and streaming modes
 
-## Install
+## Installation
+
+### Option 1: Using `pi install` (Recommended)
+
+Install directly from GitHub:
 
 ```bash
-pi -e /path/to/pi-coralbricks-provider
+pi install https://github.com/monotykamary/pi-coralbricks-provider
 ```
 
-or install globally and add the extension path to your pi config.
+or from npm:
 
-## Authentication
+```bash
+pi install npm:pi-coralbricks-provider
+```
 
-Pick one:
+Then set your API key and run pi:
 
-1. **auth.json** (recommended) — add to `~/.pi/agent/auth.json`:
+```bash
+# Recommended: add to auth.json
+# See Authentication section below
 
-   ```json
-   {
-     "coralbricks": { "type": "api_key", "key": "cb_your-key" }
-   }
-   ```
+# Or set as environment variable
+export CORALBRICKS_API_KEY=cb_your-key-here
 
-2. **Environment variable** — `CORALBRICKS_API_KEY`. With [localterm](https://www.npmjs.com/package/localterm):
+pi
+```
 
+### Option 2: Manual Clone
+
+1. Clone this repository:
    ```bash
-   localterm secret set coralbricks_api_key
-   # exposes CORALBRICKS_API_KEY to sessions
+   git clone https://github.com/monotykamary/pi-coralbricks-provider.git
+   cd pi-coralbricks-provider
+   bun install
    ```
 
-Coral Inference is currently in a design-partner program — keys are minted at [coralbricks.ai/api-keys](https://www.coralbricks.ai/api-keys), and newly-minted keys may take ~30s to be honored.
+2. Set your Coral API key:
+   ```bash
+   # Recommended: add to auth.json
+   # See Authentication section below
+
+   # Or set as environment variable
+   export CORALBRICKS_API_KEY=cb_your-key-here
+   ```
+
+3. Run pi with the extension:
+   ```bash
+   pi -e /path/to/pi-coralbricks-provider
+   ```
 
 ## Available Models
 
@@ -49,67 +86,129 @@ Coral Inference is currently in a design-partner program — keys are minted at 
 | GPT-OSS 120B | 131K | ❌ | ✅ | $0.12 | — | $0.60 |
 | Kimi K3 | 1.0M | ✅ | ✅ | $3.00 | — | $15.00 |
 
-(Cache Read shows — because Coral bills cached input at $0 on every model.)
+*Costs are per million tokens. Cache Read shows — because Coral bills cached input at **$0** on every model. Prices subject to change — check [Coral's live catalog](https://www.coralbricks.ai/api/public/models).*
 
-## Thinking levels
+## Usage
 
-| Model | Format | off | low | medium | high | max |
-|-------|--------|-----|-----|--------|------|-----|
-| GLM 5.2 FP4 | `thinking: {type}` + `reasoning_effort` | ✅ (disabled) | — | ✅ | ✅ | ✅ |
-| GLM 5.3 FP4 | `thinking: {type}` + `reasoning_effort` | ✅ (disabled) | ✅ | — | ✅ | ✅ |
-| Kimi K3 | `reasoning_effort` | — (always thinks) | ✅ | — | ✅ | ✅ |
-| GPT-OSS 120B | `reasoning_effort` | — | ✅ | ✅ | ✅ | — |
+After loading the extension, use the `/model` command in pi to select your preferred model:
+
+```
+/model coralbricks glm-5.3-fp4
+```
+
+Or start pi directly with a Coral model:
+
+```bash
+pi -e /path/to/pi-coralbricks-provider --model coralbricks/kimi-k3:high
+```
+
+Thinking levels attach to the model id with `:<level>` — e.g. `:low`, `:high`, `:max`, or `:off` (GLM only).
+
+## Authentication
+
+The Coral API key can be configured in multiple ways (resolved in this order):
+
+1. **`auth.json`** (recommended) — Add to `~/.pi/agent/auth.json`:
+   ```json
+   { "coralbricks": { "type": "api_key", "key": "cb_your-key" } }
+   ```
+   The `key` field supports literal values, env var names, and shell commands (prefix with `!`).
+2. **Runtime override** — Use the `--api-key` CLI flag
+3. **Environment variable** — Set `CORALBRICKS_API_KEY`
+
+With [localterm](https://www.npmjs.com/package/localterm), store it once and it's exposed everywhere:
+
+```bash
+localterm secret set coralbricks_api_key
+```
+
+> Coral Inference is currently in a design-partner program — mint keys at [coralbricks.ai/api-keys](https://www.coralbricks.ai/api-keys). Newly-minted keys may take ~30 seconds to be honored, and `403 access_denied` means the account isn't on the allowlist yet.
+
+## Thinking Levels
 
 Verified against the live gateway:
 
-- **GLM** accepts zai-style `thinking: {type: "disabled"}` — pi's *off* level genuinely disables thinking (the upstream Z.ai API does not, so this differs from the canonical Z.ai map).
-- **Kimi K3** always thinks: `reasoning_effort: "none"` is accepted but does not disable reasoning, so *off* is intentionally not offered. Assistant replays include `reasoning_content` (`requiresReasoningContentOnAssistantMessages`).
+| Model | Format | off | low | medium | high | max |
+|-------|--------|-----|-----|--------|------|-----|
+| GLM 5.2 FP4 | `thinking: {type}` + `reasoning_effort` | ✅ | — | ✅ | ✅ | ✅ |
+| GLM 5.3 FP4 | `thinking: {type}` + `reasoning_effort` | ✅ | ✅ | — | ✅ | ✅ |
+| Kimi K3 | `reasoning_effort` | — | ✅ | — | ✅ | ✅ |
+| GPT-OSS 120B | `reasoning_effort` | — | ✅ | ✅ | ✅ | — |
+
+- **GLM** accepts zai-style `thinking: {type: "disabled"}` on Coral — pi's *off* level genuinely disables thinking (the upstream Z.ai API does not, so this differs from the canonical Z.ai map).
+- **Kimi K3** always thinks: `reasoning_effort: "none"` is accepted but doesn't disable reasoning, so *off* is intentionally not offered. Assistant replays include `reasoning_content`.
 - **GPT-OSS** exposes the standard low/medium/high reasoning efforts; reasoning arrives in `reasoning_content`.
-- Coral streams both `reasoning_content` and a duplicate `reasoning` field; pi dedupes these automatically.
+- Coral streams a duplicate `reasoning` field alongside `reasoning_content`; pi dedupes these automatically.
 
-## Model catalog sync
+## Compat Settings
+
+Coral's gateway follows the OpenAI Chat Completions API:
+
+- **`supportsStore: false`** / **`supportsDeveloperRole: false`** — all models; Coral serves open models on the classic roles.
+- **`maxTokensField: "max_tokens"`** — all models.
+- **`thinkingFormat: "zai"`** — GLM 5.2/5.3: `thinking: {type: "enabled"|"disabled"}` toggles reasoning, `reasoning_effort` picks the depth.
+- **`thinkingFormat: "openai"`** — Kimi K3 and GPT-OSS 120B: `reasoning_effort` drives thinking depth.
+- **`supportsStrictMode: false`** — Kimi K3 (no strict JSON-schema tool definitions).
+- **`requiresReasoningContentOnAssistantMessages: true`** — Kimi K3.
+
+### Streaming Tool-Call Repair
+
+On the raw wire, Coral occasionally emits a streamed tool call's final arguments fragment on a **new delta index** instead of continuing the existing one (`"index": 1` mid-call), which fragments the call under any spec-compliant accumulator. Observed on gpt-oss-120b; GLM and Kimi streams are correct.
+
+This extension's `streamSimple` pipes SSE responses through a repair stream that rewrites id-less, name-less tool-call deltas claiming a fresh index onto the last real call's index. Deltas that do carry an id/name (new calls, parallel calls) pass through untouched, and streams that are already correct are byte-identical. Verify against a live model:
 
 ```bash
-node scripts/update-models.js              # fetch live catalog → models.json + README table
-node scripts/update-models.js --readme-only  # regenerate the README table from local data
+CORALBRICKS_API_KEY=cb_... bun run scripts/probe-stream-fix.ts [model-id]
 ```
 
-New models discovered by the sync land with API-derived defaults (`reasoning: false`, text-only) — curate `models.json` (or `patch.json`) for thinking/compat details.
+### Patch Overrides & Custom Models
 
-## Inference-quality testing
+- **`patch.json`** — per-model overrides applied on top of `models.json` (reasoning flags, pricing corrections, compat settings, thinking level maps). Currently empty — the curated defaults match the live API.
+- **`custom-models.json`** — full model definitions for models Coral doesn't list. Merged after patch.
 
-This provider is validated with [synbad](https://github.com/synthetic-lab/synbad) (tool-calling + reasoning-parsing evals), run with `--count 1` in both unary and `--stream` modes:
+Merge order: `[live|cache|embedded] → patch.json → custom-models.json`
 
-```bash
-CORALBRICKS_API_KEY=... node ../synbad/dist/source/index.js eval \
-  --env-var CORALBRICKS_API_KEY \
-  --base-url https://inference.coralbricks.ai/v1 \
-  --model glm-5.3-fp4 --count 1
-```
+## Inference-Quality Testing
 
-Results (synbad 0.0.8, `--count 1`, `--reasoning-effort high`, 15 evals per run):
+Validated with [synbad](https://github.com/synthetic-lab/synbad) — Synthetic's tool-calling and reasoning-parsing eval suite for LLM inference providers (`--count 1`, `--reasoning-effort high`, 15 evals per run):
 
 | Model | Unary | Stream | Notes |
 |-------|-------|--------|-------|
 | GLM 5.2 FP4 | 15/15 ✅ | 15/15 ✅ | |
 | GLM 5.3 FP4 | 15/15 ✅ | 15/15 ✅ | |
 | Kimi K3 | 15/15 ✅ | 15/15 ✅ | |
-| GPT-OSS 120B | 14/15 ⚠️ | 10–11/15 ❌ raw | see below |
+| GPT-OSS 120B | 14/15 ⚠️ | 10–11/15 ❌ raw | repaired in-extension (see above) |
 
-### Coral streaming tool-call index bug (gpt-oss-120b)
+The remaining gpt-oss quirk is model-side: it answers "Paris and London" with a single batched tool call even when `parallel_tool_calls: true` — not a gateway bug.
 
-On the raw wire, Coral occasionally emits a streamed tool call's final arguments fragment on a **new delta index** instead of continuing the existing one (`"index":1` mid-call), which fragments the call under any spec-compliant accumulator. GLM and Kimi streams are correct.
-
-This extension patches around it transparently: `streamCoral` (the provider's `streamSimple`) pipes SSE responses through a repair stream that rewrites id-less, name-less tool-call deltas claiming a fresh index onto the last real call's index. With the patch, gpt-oss-120b streams produce complete tool calls (verified live: one `get_weather` call with well-formed arguments).
-
-Remaining raw-wire quirks (not client-fixable):
-
-- **gpt-oss unary `parallel-tool`**: the model answers "Paris and London" with a single batched call even when `parallel_tool_calls: true` — model behavior, not a gateway bug.
-
-Diagnostic probe (streams a live tool call through the patched path):
+Reproduce:
 
 ```bash
-CORALBRICKS_API_KEY=... bun run scripts/probe-stream-fix.ts [model-id]
+CORALBRICKS_API_KEY=cb_... node ../synbad/dist/source/index.js eval \
+  --env-var CORALBRICKS_API_KEY \
+  --base-url https://inference.coralbricks.ai/v1 \
+  --model glm-5.3-fp4 --count 1 --reasoning-effort high
+```
+
+## Updating Models
+
+Run the update script to fetch the latest models from Coral's API:
+
+```bash
+export CORALBRICKS_API_KEY=cb_your-key
+node scripts/update-models.js
+```
+
+This will:
+1. Fetch models from `https://inference.coralbricks.ai/v1/models` (falls back to the unauthenticated [public catalog](https://www.coralbricks.ai/api/public/models) without a key)
+2. Preserve existing model data (pricing, compat, thinking maps) for known models
+3. Apply overrides from `patch.json`
+4. Update `models.json` and the README model table
+
+To regenerate just the README model table from local data — no API key needed:
+
+```bash
+node scripts/update-models.js --readme-only
 ```
 
 ## Troubleshooting
@@ -118,9 +217,10 @@ CORALBRICKS_API_KEY=... bun run scripts/probe-stream-fix.ts [model-id]
 |---------|---------|
 | `403 access_denied` | Account not on the Coral Inference allowlist yet |
 | `404 model_not_accepted` | Model id not enabled for your key |
+| `401 invalid_api_key` | Re-mint at [coralbricks.ai/api-keys](https://www.coralbricks.ai/api-keys); fresh keys take ~30s to activate |
 | `429 rate_limit_exceeded` | Per-key rate limit — retry with backoff |
 | `502 upstream_error` / `503 backend_unconfigured` | Transient — retry |
-| `504 timeout` | Sync request waited too long; re-issue smaller or use background mode via the Responses API |
+| `504 timeout` | Sync request waited too long; re-issue smaller or use Coral's background Responses API |
 
 ## License
 
