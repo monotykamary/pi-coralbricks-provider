@@ -1,0 +1,58 @@
+{
+  "name": "pi-coralbricks-provider",
+  "version": "1.0.0",
+  "description": "CoralBricks provider extension for pi - Access GLM 5.2/5.3, Kimi K3, and GPT-OSS 120B through the Coral Inference API",
+  "author": "monotykamary",
+  "homepage": "https://github.com/monotykamary/pi-coralbricks-provider#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/monotykamary/pi-coralbricks-provider.git"
+  },
+  "bugs": {
+    "url": "https://github.com/monotykamary/pi-coralbricks-provider/issues"
+  },
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "clean": "echo 'nothing to clean'",
+    "build": "echo 'nothing to build'",
+    "check": "tsc --noEmit && vitest run",
+    "test": "vitest run",
+    "update-models": "node scripts/update-models.js"
+  },
+  "keywords": [
+    "pi",
+    "extension",
+    "provider",
+    "coralbricks",
+    "coral",
+    "ai",
+    "llm",
+    "glm",
+    "kimi",
+    "gpt-oss"
+  ],
+  "license": "MIT",
+  "files": [
+    "index.ts",
+    "models.json",
+    "deprecated-models.json",
+    "custom-models.json",
+    "patch.json",
+    "scripts/update-models.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.84.4",
+    "@earendil-works/pi-coding-agent": "0.84.4",
+    "@types/node": "^22.20.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.7"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
