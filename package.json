@@ -1,6 +1,6 @@
 {
   "name": "pi-coralbricks-provider",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "CoralBricks provider extension for pi - Access GLM 5.2/5.3, Kimi K3, and GPT-OSS 120B through the Coral Inference API",
   "author": "monotykamary",
   "homepage": "https://github.com/monotykamary/pi-coralbricks-provider#readme",
