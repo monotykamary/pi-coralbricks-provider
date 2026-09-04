@@ -13,6 +13,7 @@ import {
 import modelsData from "../models.json" with { type: "json" };
 import customModelsData from "../custom-models.json" with { type: "json" };
 import patchData from "../patch.json" with { type: "json" };
+import deprecatedData from "../deprecated-models.json" with { type: "json" };
 
 const DEPRECATED_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -142,7 +143,7 @@ describe("buildModels pipeline", () => {
   it("ignores patch entries for unknown ids", () => {
     const models = buildModels(modelsData as any, [], { "no-such-model": { name: "x" } });
     expect(models.find((m) => m.id === "x")).toBeUndefined();
-    expect(models.length).toBe(modelsData.length);
+    expect(models.length).toBe(withDeprecated(modelsData as any).length);
   });
 
   it("adds custom models and applies their patches", () => {
@@ -191,23 +192,24 @@ describe("deprecated model grace period", () => {
   });
 
   it("withDeprecated appends only missing deprecated models", () => {
-    const fresh = new Date().toISOString();
-    const dep = { ...(modelsData[0] as any), id: "gone-model", deprecatedAt: fresh };
     const base = [{ ...modelsData[0], id: "live-model" }];
+    const extras = activeDeprecatedModels();
     const result = withDeprecated(base as any);
-    expect(result.length).toBe(1);
+    expect(result.map((m) => m.id)).toEqual([...base.map((m) => m.id), ...extras.map((m) => m.id)]);
 
-    const entries = { "gone-model": dep };
-    const extras = activeDeprecatedModels(entries);
-    expect(extras.map((m) => m.id)).toEqual(["gone-model"]);
+    const existing = [...base, ...extras];
+    expect(withDeprecated(existing as any)).toHaveLength(existing.length);
   });
 });
 
-describe("embedded models.json invariants", () => {
+describe("embedded model catalog invariants", () => {
   const models = modelsData as any[];
+  const deprecatedModels = Object.values(deprecatedData) as any[];
+  const catalog = [...models, ...deprecatedModels];
 
-  it("covers the known Coral catalog", () => {
-    expect(models.map((m) => m.id).sort()).toEqual(["glm-5.2-fp4", "glm-5.3-fp4", "gpt-oss-120b", "kimi-k3"]);
+  it("separates current and recently removed Coral models", () => {
+    expect(models.map((m) => m.id).sort()).toEqual(["glm-5.3-fp4", "gpt-oss-120b", "kimi-k3"]);
+    expect(deprecatedModels.map((m) => m.id)).toEqual(["glm-5.2-fp4"]);
   });
 
   it("has well-formed costs with free cached reads", () => {
@@ -223,7 +225,7 @@ describe("embedded models.json invariants", () => {
   });
 
   it("keeps pricing aligned with Coral's published rates", () => {
-    const byId = Object.fromEntries(models.map((m) => [m.id, m]));
+    const byId = Object.fromEntries(catalog.map((m) => [m.id, m]));
     expect(byId["glm-5.2-fp4"].cost).toMatchObject({ input: 1.12, output: 4.4 });
     expect(byId["glm-5.3-fp4"].cost).toMatchObject({ input: 1.12, output: 4.4 });
     expect(byId["kimi-k3"].cost).toMatchObject({ input: 3, output: 15 });
@@ -241,7 +243,7 @@ describe("embedded models.json invariants", () => {
   });
 
   it("maps thinking levels per upstream model family", () => {
-    const byId = Object.fromEntries(models.map((m) => [m.id, m]));
+    const byId = Object.fromEntries(catalog.map((m) => [m.id, m]));
     // GLM 5.2: zai format, off→disabled + high/max efforts
     expect(byId["glm-5.2-fp4"].compat?.thinkingFormat).toBe("zai");
     expect(byId["glm-5.2-fp4"].thinkingLevelMap).toMatchObject({ off: "none", high: "high", max: "max" });
