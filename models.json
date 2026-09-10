@@ -1,5 +1,26 @@
 [
   {
+    "id": "glm-5.3-flash-fp4",
+    "name": "GLM 5.3 Flash",
+    "reasoning": false,
+    "input": [
+      "text"
+    ],
+    "cost": {
+      "input": 0.15,
+      "output": 0.5,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "contextWindow": 1048576,
+    "maxTokens": 32768,
+    "compat": {
+      "supportsDeveloperRole": false,
+      "supportsStore": false,
+      "maxTokensField": "max_tokens"
+    }
+  },
+  {
     "id": "glm-5.3-fp4",
     "name": "GLM 5.3 FP4",
     "reasoning": true,
