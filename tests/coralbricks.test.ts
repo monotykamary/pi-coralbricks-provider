@@ -208,7 +208,7 @@ describe("embedded model catalog invariants", () => {
   const catalog = [...models, ...deprecatedModels];
 
   it("separates current and recently removed Coral models", () => {
-    expect(models.map((m) => m.id).sort()).toEqual(["glm-5.3-fp4", "gpt-oss-120b", "kimi-k3"]);
+    expect(models.map((m) => m.id).sort()).toEqual(["glm-5.3-flash-fp4", "glm-5.3-fp4", "gpt-oss-120b", "kimi-k3"]);
     expect(deprecatedModels.map((m) => m.id)).toEqual(["glm-5.2-fp4"]);
   });
 
@@ -232,8 +232,9 @@ describe("embedded model catalog invariants", () => {
     expect(byId["gpt-oss-120b"].cost).toMatchObject({ input: 0.12, output: 0.6 });
   });
 
-  it("gives every reasoning model a thinkingLevelMap and thinkingFormat", () => {
-    for (const m of models) {
+  it("gives every effective model reasoning config after patch.json", () => {
+    const effective = buildModels(modelsData as any, customModelsData as any, patchData as any);
+    for (const m of effective) {
       expect(m.reasoning).toBe(true);
       expect(m.thinkingLevelMap).toBeDefined();
       expect(m.compat?.thinkingFormat).toBeDefined();
@@ -243,12 +244,18 @@ describe("embedded model catalog invariants", () => {
   });
 
   it("maps thinking levels per upstream model family", () => {
-    const byId = Object.fromEntries(catalog.map((m) => [m.id, m]));
+    const effective = buildModels(modelsData as any, customModelsData as any, patchData as any);
+    const byId = Object.fromEntries(effective.map((m) => [m.id, m]));
     // GLM 5.2: zai format, off→disabled + high/max efforts
     expect(byId["glm-5.2-fp4"].compat?.thinkingFormat).toBe("zai");
     expect(byId["glm-5.2-fp4"].thinkingLevelMap).toMatchObject({ off: "none", high: "high", max: "max" });
     // GLM 5.3 adds a low effort
     expect(byId["glm-5.3-fp4"].thinkingLevelMap).toMatchObject({ off: "none", low: "low", high: "high", max: "max" });
+    // GLM 5.3 Flash: same zai family map; only low/high/max efforts exist upstream
+    expect(byId["glm-5.3-flash-fp4"].compat?.thinkingFormat).toBe("zai");
+    expect(byId["glm-5.3-flash-fp4"].thinkingLevelMap).toMatchObject({ off: "none", low: "low", high: "high", max: "max" });
+    expect(byId["glm-5.3-flash-fp4"].maxTokens).toBe(131072);
+    expect(byId["glm-5.3-flash-fp4"].input).toEqual(["text", "image"]);
     // Kimi K3: openai reasoning_effort, no off (thinking cannot be disabled), low/high/max
     expect(byId["kimi-k3"].compat?.thinkingFormat).toBe("openai");
     expect(byId["kimi-k3"].thinkingLevelMap).toMatchObject({ off: null, low: "low", high: "high", max: "max" });
@@ -262,8 +269,8 @@ describe("embedded model catalog invariants", () => {
     expect(kimi.input).toContain("image");
   });
 
-  it("starts with empty patch/custom sources", () => {
-    expect(patchData).toEqual({});
+  it("curates glm-5.3-flash-fp4 via patch.json; custom models stay empty", () => {
+    expect(Object.keys(patchData)).toEqual(["glm-5.3-flash-fp4"]);
     expect(customModelsData).toEqual([]);
   });
 });
