@@ -55,7 +55,7 @@ Provider API  ──fetch──►  models.json  ──apply──►  patch.jso
 
 ## Releases & Publishing
 
-npm publishing is automated and tag-driven. `${0}`.github/workflows/publish.yml` owns it through npm Trusted Publishing over OIDC, so no npm token exists in the repo, in any secret, or on anyone's machine.
+npm publishing is automated and tag-driven. `.github/workflows/publish.yml` owns it through npm Trusted Publishing over OIDC, so no npm token exists in the repo, in any secret, or on anyone's machine.
 
 1. Bump `version` in `package.json` and commit it (`chore(release): v<version>`).
 2. Merge to `main`.
