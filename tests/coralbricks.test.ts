@@ -5,7 +5,6 @@ import {
   buildModels,
   mergeWithEmbedded,
   parseContextWindow,
-  repairToolCallIndices,
   transformApiModel,
   transformCatalogModel,
   withDeprecated,
@@ -275,47 +274,3 @@ describe("embedded model catalog invariants", () => {
   });
 });
 
-describe("repairToolCallIndices (Coral streaming index bug)", () => {
-  const delta = (toolCalls: any) => ({ choices: [{ index: 0, delta: { tool_calls: toolCalls } }] });
-
-  it("rewrites id-less fragments that claim a new index onto the last real call", () => {
-    const seen = new Map<number, number>();
-    // gpt-oss-120b on Coral: start + continuations at index 0, then the final
-    // fragment arrives mis-indexed at 1.
-    expect(repairToolCallIndices(delta([
-      { id: "call_1", type: "function", index: 0, function: { name: "get_weather", arguments: "" } },
-    ]), seen)).toBe(false);
-    expect(repairToolCallIndices(delta([{ index: 0, function: { arguments: '{\"location\": \"Paris' } }]), seen)).toBe(false);
-    expect(repairToolCallIndices(delta([{ index: 1, function: { arguments: '\"}' } }]), seen)).toBe(true);
-  });
-
-  it("leaves correct streams untouched (GLM null-id continuations at index 0)", () => {
-    const seen = new Map<number, number>();
-    const chunks = [
-      [{ id: "call_1", index: 0, type: "function", function: { name: "get_weather", arguments: "" } }],
-      [{ id: null, index: 0, type: "function", function: { name: null, arguments: "{" } }],
-      [{ id: null, index: 0, type: "function", function: { name: null, arguments: '\"location\": \"Paris\"' } }],
-      [{ id: null, index: 0, type: "function", function: { name: null, arguments: "}" } }],
-    ];
-    for (const tcs of chunks) {
-      expect(repairToolCallIndices(delta(tcs), seen)).toBe(false);
-    }
-  });
-
-  it("tracks parallel calls independently by their own ids", () => {
-    const seen = new Map<number, number>();
-    expect(repairToolCallIndices(delta([
-      { id: "call_a", index: 0, type: "function", function: { name: "get_weather", arguments: "" } },
-      { id: "call_b", index: 1, type: "function", function: { name: "get_weather", arguments: "" } },
-    ]), seen)).toBe(false);
-    // continuation of call_b mis-indexed at 2 → rewritten to 1
-    expect(repairToolCallIndices(delta([{ index: 2, function: { arguments: "}" } }]), seen)).toBe(true);
-  });
-
-  it("ignores chunks without tool_calls or choices", () => {
-    const seen = new Map<number, number>();
-    expect(repairToolCallIndices({ choices: [] }, seen)).toBe(false);
-    expect(repairToolCallIndices({}, seen)).toBe(false);
-    expect(repairToolCallIndices(null, seen)).toBe(false);
-  });
-});

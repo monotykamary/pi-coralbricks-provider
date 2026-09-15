@@ -424,84 +424,6 @@ async function revalidateModels(apiKey: string | undefined, embeddedModels: Json
   return merged;
 }
 
-// Streaming: Coral gateway tool-call index repair
-//
-// Some Coral models (observed on gpt-oss-120b) emit a streamed tool call's
-// final arguments fragment on a NEW delta index instead of continuing the
-// existing one:
-//
-//   {"tool_calls":[{"id":"call_1","index":0,"function":{"name":"get_weather","arguments":"{\"location\": \"Par"}}]}
-//   {"tool_calls":[{"index":1,"function":{"arguments":"is\"}"}}]}   ← wrong index
-//
-// OpenAI semantics say a delta can only START a tool call when it carries an
-// id (and a function name); continuations omit them. pi-ai's accumulator
-// merges by index, so a mis-indexed fragment materializes a second, truncated
-// tool call. Per choice, we track the index of the last fragment that carried
-// id/name and rewrite id-less, name-less deltas that claim a different index
-// onto it. Deltas that DO carry id/name (new calls, parallel calls) pass
-// through untouched, as do Coral streams that are already correct (GLM/Kimi).
-
-function repairToolCallIndices(chunk: any, lastToolCallIndex: Map<number, number>): boolean {
-  const choices = chunk?.choices;
-  if (!Array.isArray(choices)) return false;
-  let changed = false;
-  for (const choice of choices) {
-    const toolCalls = choice?.delta?.tool_calls;
-    if (!Array.isArray(toolCalls) || toolCalls.length === 0) continue;
-    const choiceIndex = typeof choice.index === "number" ? choice.index : 0;
-    for (const tc of toolCalls) {
-      const hasId = typeof tc?.id === "string" && tc.id.length > 0;
-      const hasName = typeof tc?.function?.name === "string" && tc.function.name.length > 0;
-      if (hasId || hasName) {
-        lastToolCallIndex.set(choiceIndex, tc.index);
-        continue;
-      }
-      const previous = lastToolCallIndex.get(choiceIndex);
-      if (previous !== undefined && typeof tc?.index === "number" && tc.index !== previous) {
-        tc.index = previous;
-        changed = true;
-      }
-    }
-  }
-  return changed;
-}
-
-function createToolCallIndexFixer(): TransformStream<Uint8Array, Uint8Array> {
-  const decoder = new TextDecoder();
-  const encoder = new TextEncoder();
-  const lastToolCallIndex = new Map<number, number>();
-  let buffer = "";
-
-  const fixLine = (line: string): string => {
-    if (!line.startsWith("data:") || !line.includes("\"tool_calls\"")) return line;
-    const payload = line.slice(5).trim();
-    if (!payload || payload === "[DONE]") return line;
-    let chunk: any;
-    try {
-      chunk = JSON.parse(payload);
-    } catch {
-      return line;
-    }
-    const changed = repairToolCallIndices(chunk, lastToolCallIndex);
-    return changed ? "data: " + JSON.stringify(chunk) : line;
-  };
-
-  return new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      buffer += decoder.decode(chunk, { stream: true });
-      let newline: number;
-      while ((newline = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
-        controller.enqueue(encoder.encode(fixLine(line) + "\n"));
-      }
-    },
-    flush(controller) {
-      if (buffer.length > 0) controller.enqueue(encoder.encode(fixLine(buffer)));
-    },
-  });
-}
-
 export function streamCoral(
   model: any,
   context: any,
@@ -522,24 +444,8 @@ export function streamCoral(
   const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
   const { reasoning: _reasoning, ...streamOptions } = options ?? {};
 
-  // Per-request fetch interceptor (never a global patch — concurrent agent and
-  // helper-model streams must not see each other's wrappers).
-  const upstreamFetch = streamOptions.fetch ?? globalThis.fetch;
-  const coralFetch: typeof globalThis.fetch = async (input, init) => {
-    const response = await upstreamFetch(input as RequestInfo | URL, init);
-    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
-    const isEventStream = (response.headers.get("content-type") ?? "").includes("text/event-stream");
-    if (!response.body || !isEventStream || !url.includes("/chat/completions")) return response;
-    return new Response(response.body.pipeThrough(createToolCallIndexFixer()), {
-      headers: response.headers,
-      status: response.status,
-      statusText: response.statusText,
-    });
-  };
-
   return streamOpenAICompletions(model, context, {
     ...streamOptions,
-    fetch: coralFetch,
     reasoningEffort,
     apiKey,
   } as any);
@@ -596,4 +502,4 @@ export default function (pi: ExtensionAPI) {
   });
 }
 
-export { applyPatch, buildModels, mergeWithEmbedded, transformApiModel, transformCatalogModel, activeDeprecatedModels, withDeprecated, parseContextWindow, repairToolCallIndices, PROVIDER_ID, BASE_URL };
+export { applyPatch, buildModels, mergeWithEmbedded, transformApiModel, transformCatalogModel, activeDeprecatedModels, withDeprecated, parseContextWindow, PROVIDER_ID, BASE_URL };

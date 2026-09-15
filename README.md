@@ -23,7 +23,6 @@ _A [pi](https://github.com/earendil-works/pi-coding-agent) provider extension fo
 - **Per-family thinking levels** — zai-style `thinking` control for GLM (including a *real* off switch), `reasoning_effort` for Kimi K3 and GPT-OSS
 - **Accurate cost tracking** — pricing mirrors Coral's published rates, and cached reads are **$0 on every model**, so pi's computed cost matches Coral's own `usage.cost` to the token
 - **Self-healing model sync** — stale-while-revalidate from the authenticated `/v1/models` (or the unauthenticated [public catalog](https://www.coralbricks.ai/api/public/models) before auth), hot-swapped at session start
-- **Streaming repair** — transparently fixes Coral's gpt-oss tool-call delta index fragmentation so streamed tool calls always accumulate correctly
 - **synbad-validated** — [synbad](https://github.com/synthetic-lab/synbad) tool-calling and reasoning-parsing evals pass 15/15 on GLM 5.2, GLM 5.3, and Kimi K3 in both unary and streaming modes
 
 ## Installation
@@ -152,16 +151,6 @@ Coral's gateway follows the OpenAI Chat Completions API:
 - **`supportsStrictMode: false`** — Kimi K3 (no strict JSON-schema tool definitions).
 - **`requiresReasoningContentOnAssistantMessages: true`** — Kimi K3.
 
-### Streaming Tool-Call Repair
-
-On the raw wire, Coral occasionally emits a streamed tool call's final arguments fragment on a **new delta index** instead of continuing the existing one (`"index": 1` mid-call), which fragments the call under any spec-compliant accumulator. Observed on gpt-oss-120b; GLM and Kimi streams are correct.
-
-This extension's `streamSimple` pipes SSE responses through a repair stream that rewrites id-less, name-less tool-call deltas claiming a fresh index onto the last real call's index. Deltas that do carry an id/name (new calls, parallel calls) pass through untouched, and streams that are already correct are byte-identical. Verify against a live model:
-
-```bash
-CORALBRICKS_API_KEY=cb_... bun run scripts/probe-stream-fix.ts [model-id]
-```
-
 ### Patch Overrides & Custom Models
 
 - **`patch.json`** — per-model overrides applied on top of `models.json` (reasoning flags, pricing corrections, compat settings, thinking level maps). Currently empty — the curated defaults match the live API.
@@ -178,7 +167,7 @@ Validated with [synbad](https://github.com/synthetic-lab/synbad) — Synthetic's
 | GLM 5.2 FP4 | 15/15 ✅ | 15/15 ✅ | |
 | GLM 5.3 FP4 | 15/15 ✅ | 15/15 ✅ | |
 | Kimi K3 | 15/15 ✅ | 15/15 ✅ | |
-| GPT-OSS 120B | 14/15 ⚠️ | 10–11/15 ❌ raw | repaired in-extension (see above) |
+| GPT-OSS 120B | 14/15 ⚠️ | pending re-eval | gateway tool-call index bug is fixed upstream |
 
 The remaining gpt-oss quirk is model-side: it answers "Paris and London" with a single batched tool call even when `parallel_tool_calls: true` — not a gateway bug.
 

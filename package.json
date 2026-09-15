@@ -40,7 +40,6 @@
     "custom-models.json",
     "patch.json",
     "scripts/update-models.js",
-    "scripts/probe-stream-fix.ts",
     "README.md",
     "LICENSE"
   ],
