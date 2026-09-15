@@ -2,7 +2,7 @@
 
 # 🪸 pi-coralbricks-provider
 
-**GLM 5.2/5.3, Kimi K3 & GPT-OSS 120B through [Coral Bricks](https://www.coralbricks.ai)**
+**GLM 5.3, GLM 5.3 Flash, Kimi K3 & GPT-OSS 120B through [Coral Bricks](https://www.coralbricks.ai)**
 
 _A [pi](https://github.com/earendil-works/pi-coding-agent) provider extension for Coral's OpenAI-compatible inference gateway — up to **1M context** on open models._
 
@@ -17,8 +17,8 @@ _A [pi](https://github.com/earendil-works/pi-coding-agent) provider extension fo
 
 ## Features
 
-- **4 reasoning models** from Coral's DynamoDB-backed live catalog — GLM 5.2 FP4, GLM 5.3 FP4, Kimi K3, and GPT-OSS 120B
-- **1M token context** on GLM and Kimi, with vision (image input) on Kimi K3
+- **4 reasoning models** from Coral's live catalog — GLM 5.3 FP4, GLM 5.3 Flash, Kimi K3, and GPT-OSS 120B
+- **1M token context** on GLM and Kimi, with vision (image input) on Kimi K3 and GLM 5.3 Flash
 - **OpenAI-compatible API** — standard `/v1/chat/completions`, streaming, and tool calling
 - **Per-family thinking levels** — zai-style `thinking` control for GLM (including a *real* off switch), `reasoning_effort` for Kimi K3 and GPT-OSS
 - **Accurate cost tracking** — pricing mirrors Coral's published rates, and cached reads are **$0 on every model**, so pi's computed cost matches Coral's own `usage.cost` to the token
@@ -153,7 +153,7 @@ Coral's gateway follows the OpenAI Chat Completions API:
 
 ### Patch Overrides & Custom Models
 
-- **`patch.json`** — per-model overrides applied on top of `models.json` (reasoning flags, pricing corrections, compat settings, thinking level maps). Currently empty — the curated defaults match the live API.
+- **`patch.json`** — per-model overrides applied on top of `models.json` (reasoning flags, pricing corrections, compat settings, thinking level maps). Currently carries the GLM 5.3 Flash entry: reasoning, image input, its thinking level map and compat settings.
 - **`custom-models.json`** — full model definitions for models Coral doesn't list. Merged after patch.
 
 Merge order: `[live|cache|embedded] → patch.json → custom-models.json`
