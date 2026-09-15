@@ -50,8 +50,24 @@ Provider API  ──fetch──►  models.json  ──apply──►  patch.jso
 ### Regenerate the README model table
 → Run `node scripts/update-models.js --readme-only` — it updates the table from local model data without any network calls.
 
+### Cut a release
+→ Bump `version` in `package.json`, commit, merge to `main`, then `git tag v<version> && git push origin v<version>`. Never publish by hand — see Releases & Publishing below.
+
+## Releases & Publishing
+
+npm publishing is automated and tag-driven. `${0}`.github/workflows/publish.yml` owns it through npm Trusted Publishing over OIDC, so no npm token exists in the repo, in any secret, or on anyone's machine.
+
+1. Bump `version` in `package.json` and commit it (`chore(release): v<version>`).
+2. Merge to `main`.
+3. `git tag v<version> && git push origin v<version>` — CI publishes from there.
+
+The workflow refuses to publish unless a tag `v<version>` exists whose published files are byte-identical to the ref being built (a mistyped or stale tag fails loudly instead of shipping the wrong tree), skips when that version is already on npm, runs `bun install --frozen-lockfile` + `tsc --noEmit` + `vitest run` before publishing, and signs the tarball with Sigstore provenance. A manual `workflow_dispatch` run does the same thing, for backfilling a version that was tagged but never published.
+
+Releasing needs only repo write access: tag creation is open to writers, while the `v*` ruleset restricts moving or deleting release tags to the repo admin.
+
 ## TL;DR
 
 - **Never edit `models.json`** — edit `patch.json` instead.
 - **Never edit the README model table** — run the update script instead.
 - `patch.json` and `custom-models.json` are the source files you should modify.
+- **Never `npm publish` by hand** — push a `v<version>` tag and let CI test and publish it.
