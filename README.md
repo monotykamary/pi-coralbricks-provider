@@ -130,10 +130,11 @@ Verified against the live gateway:
 | Model | Format | off | low | medium | high | max |
 |-------|--------|-----|-----|--------|------|-----|
 | GLM 5.3 FP4 | `thinking: {type}` + `reasoning_effort` | ✅ | ✅ | — | ✅ | ✅ |
+| GLM 5.3 Flash | `thinking: {type}` + `reasoning_effort` | ✅ | ✅ | — | ✅ | ✅ |
 | Kimi K3 | `reasoning_effort` | — | ✅ | — | ✅ | ✅ |
 | GPT-OSS 120B | `reasoning_effort` | — | ✅ | ✅ | ✅ | — |
 
-- **GLM** accepts zai-style `thinking: {type: "disabled"}` on Coral — pi's *off* level genuinely disables thinking (the upstream Z.ai API does not, so this differs from the canonical Z.ai map).
+- **GLM** accepts zai-style `thinking: {type: "disabled"}` on Coral — pi's *off* level turns thinking off, though a short preamble of a few dozen tokens can still appear (the upstream Z.ai API has no off at all, so this differs from the canonical Z.ai map).
 - **Kimi K3** always thinks: `reasoning_effort: "none"` is accepted but doesn't disable reasoning, so *off* is intentionally not offered. Assistant replays include `reasoning_content`.
 - **GPT-OSS** exposes the standard low/medium/high reasoning efforts; reasoning arrives in `reasoning_content`.
 - Coral streams a duplicate `reasoning` field alongside `reasoning_content`; pi dedupes these automatically.
@@ -158,16 +159,19 @@ Merge order: `[live|cache|embedded] → patch.json → custom-models.json`
 
 ## Inference-Quality Testing
 
-Validated with [synbad](https://github.com/synthetic-lab/synbad) — Synthetic's tool-calling and reasoning-parsing eval suite for LLM inference providers (`--count 1`, `--reasoning-effort high`; the GLM/Kimi runs used the 15-eval suite, the GPT-OSS re-run on 2026-09-15 the current 13-eval suite):
+Validated with [synbad](https://github.com/synthetic-lab/synbad) — Synthetic's tool-calling and reasoning-parsing eval suite for LLM inference providers (`--count 1`, `--reasoning-effort high`; the GLM 5.3/Kimi runs used the 15-eval suite, the GPT-OSS and GLM 5.3 Flash runs on 2026-09-15 the current 13-eval suite):
 
 | Model | Unary | Stream | Notes |
 |-------|-------|--------|-------|
 | GLM 5.3 FP4 | 15/15 ✅ | 15/15 ✅ | |
+| GLM 5.3 Flash | 13/13 ✅ | 12/13 ⚠️ | re-run 2026-09-15; see below |
 | Kimi K3 | 15/15 ✅ | 15/15 ✅ | |
 | GPT-OSS 120B | 11/13 ⚠️ | 12/13 ⚠️ | re-run 2026-09-15; see below |
 | GLM 5.2 FP4 (retired) | 15/15 ✅ | 15/15 ✅ | evaluated before Coral retired the model |
 
 The gpt-oss misses are model-side, not transport: `tools/parallel-tool` fails in both modes because it answers "Paris and London" with one call after another instead of two parallel calls even when `parallel_tool_calls: true`; `reasoning/reasoning-claude-tool-call` (a prompt that asks the model to "put the tool call inside your thinking") occasionally gets exactly that in unary mode — the model narrates the call in its reasoning and answers in text — while streaming passed it every time.
+
+GLM 5.3 Flash's streaming miss is `reasoning/reasoning-parsing`: on the trivial prompt it uses, Flash occasionally answers without a think block (about 1 in 5 streams and 1 in 8 unary responses in our sampling); the answer itself is unaffected, and a second full unary pass was 13/13.
 
 Reproduce:
 
