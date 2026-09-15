@@ -1,0 +1,71 @@
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# Auth is npm Trusted Publishing (OIDC) - no secret required. One-time setup at
+# https://www.npmjs.com/package/pi-coralbricks-provider/access with
+# publisher = GitHub Actions, org = monotykamary, repo = pi-coralbricks-provider,
+# workflow = publish.yml. Token fallback: add registry-url to setup-node and set
+# NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} on the publish step.
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify HEAD is the v<version> release commit
+        id: release
+        run: |
+          pkg="$(node -p "require('./package.json').version")"
+          if ! git tag --points-at HEAD | grep -qx "v$pkg"; then
+            echo "::error::HEAD is not tagged v$pkg - publish only from a release commit"
+            exit 1
+          fi
+          echo "version=$pkg" >> "$GITHUB_OUTPUT"
+
+      - name: Check npm for an existing release
+        id: published
+        run: |
+          pkg="${{ steps.release.outputs.version }}"
+          if npm view "pi-coralbricks-provider@$pkg" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::pi-coralbricks-provider@$pkg is already on npm, nothing to publish"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.published.outputs.exists == 'false'
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck and test
+        if: steps.published.outputs.exists == 'false'
+        run: bun run check
+
+      - name: Publish to npm
+        if: steps.published.outputs.exists == 'false'
+        run: |
+          npm install --global npm@latest
+          npm publish --access public --provenance
