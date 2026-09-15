@@ -478,27 +478,6 @@ function updateDeprecatedModels(modelsJsonPath, newModels) {
   }
 }
 
-function withDeprecatedForReadme(models) {
-  const deprecatedPath = path.join(path.dirname(MODELS_JSON_PATH), 'deprecated-models.json');
-  let deprecated = {};
-  try {
-    const parsed = JSON.parse(fs.readFileSync(deprecatedPath, 'utf8'));
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) deprecated = parsed;
-  } catch { /* no graveyard yet */ }
-  const now = Date.now();
-  const seen = new Set(models.map((m) => m.id));
-  const extras = [];
-  for (const entry of Object.values(deprecated)) {
-    if (!entry || !entry.id || seen.has(entry.id)) continue;
-    const removedAt = Date.parse(entry.deprecatedAt || '');
-    if (Number.isNaN(removedAt) || now - removedAt > DEPRECATED_MODEL_TTL_MS) continue;
-    const m = { ...entry };
-    delete m.deprecatedAt;
-    extras.push(m);
-  }
-  return extras.length > 0 ? [...models, ...extras] : models;
-}
-
 async function main() {
   try {
     // Regenerate the derived README table from local source data without an API
@@ -507,7 +486,7 @@ async function main() {
       const baseModels = loadJson(MODELS_JSON_PATH);
       const patchData = loadJson(PATCH_JSON_PATH);
       const customModels = loadJson(CUSTOM_MODELS_JSON_PATH);
-      const readmeBase = withDeprecatedForReadme(Array.isArray(baseModels) ? baseModels : []);
+      const readmeBase = Array.isArray(baseModels) ? baseModels : [];
       const readmeModels = buildModels(readmeBase, Array.isArray(customModels) ? customModels : [], patchData);
       readmeModels.sort((a, b) => a.name.localeCompare(b.name));
       updateReadme(readmeModels);
@@ -541,10 +520,11 @@ async function main() {
     updateDeprecatedModels(MODELS_JSON_PATH, models);
     saveJson(MODELS_JSON_PATH, models);
 
-    // Build full model list for README: (base + grace-period deprecated) → patch → custom.
+    // Build the README model list: base → patch → custom. Grace-period models stay
+    // servable at runtime (index.ts appends them) but are not listed as available.
     const patchData = loadJson(PATCH_JSON_PATH);
     const customModels = loadJson(CUSTOM_MODELS_JSON_PATH);
-    const readmeBase = withDeprecatedForReadme(models);
+    const readmeBase = models;
     const readmeModels = buildModels(readmeBase, Array.isArray(customModels) ? customModels : [], patchData);
     readmeModels.sort((a, b) => a.name.localeCompare(b.name));
 

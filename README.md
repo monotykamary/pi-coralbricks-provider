@@ -23,7 +23,7 @@ _A [pi](https://github.com/earendil-works/pi-coding-agent) provider extension fo
 - **Per-family thinking levels** — zai-style `thinking` control for GLM (including a *real* off switch), `reasoning_effort` for Kimi K3 and GPT-OSS
 - **Accurate cost tracking** — pricing mirrors Coral's published rates, and cached reads are **$0 on every model**, so pi's computed cost matches Coral's own `usage.cost` to the token
 - **Self-healing model sync** — stale-while-revalidate from the authenticated `/v1/models` (or the unauthenticated [public catalog](https://www.coralbricks.ai/api/public/models) before auth), hot-swapped at session start
-- **synbad-validated** — [synbad](https://github.com/synthetic-lab/synbad) tool-calling and reasoning-parsing evals pass 15/15 on GLM 5.2, GLM 5.3, and Kimi K3 in both unary and streaming modes
+- **synbad-validated** — [synbad](https://github.com/synthetic-lab/synbad) tool-calling and reasoning-parsing evals pass 15/15 on GLM 5.3 and Kimi K3 in both unary and streaming modes
 
 ## Installation
 
@@ -80,7 +80,6 @@ pi
 
 | Model | Context | Vision | Reasoning | Input $/M | Cache Read $/M | Output $/M |
 |-------|---------|--------|-----------|-----------|-----------------|------------|
-| GLM 5.2 FP4 | 1.0M | ❌ | ✅ | $1.12 | — | $4.40 |
 | GLM 5.3 Flash | 1.0M | ✅ | ✅ | $0.15 | — | $0.50 |
 | GLM 5.3 FP4 | 1.0M | ❌ | ✅ | $1.12 | — | $4.40 |
 | GPT-OSS 120B | 131K | ❌ | ✅ | $0.12 | — | $0.60 |
@@ -130,7 +129,6 @@ Verified against the live gateway:
 
 | Model | Format | off | low | medium | high | max |
 |-------|--------|-----|-----|--------|------|-----|
-| GLM 5.2 FP4 | `thinking: {type}` + `reasoning_effort` | ✅ | — | ✅ | ✅ | ✅ |
 | GLM 5.3 FP4 | `thinking: {type}` + `reasoning_effort` | ✅ | ✅ | — | ✅ | ✅ |
 | Kimi K3 | `reasoning_effort` | — | ✅ | — | ✅ | ✅ |
 | GPT-OSS 120B | `reasoning_effort` | — | ✅ | ✅ | ✅ | — |
@@ -146,7 +144,7 @@ Coral's gateway follows the OpenAI Chat Completions API:
 
 - **`supportsStore: false`** / **`supportsDeveloperRole: false`** — all models; Coral serves open models on the classic roles.
 - **`maxTokensField: "max_tokens"`** — all models.
-- **`thinkingFormat: "zai"`** — GLM 5.2/5.3: `thinking: {type: "enabled"|"disabled"}` toggles reasoning, `reasoning_effort` picks the depth.
+- **`thinkingFormat: "zai"`** — GLM 5.3: `thinking: {type: "enabled"|"disabled"}` toggles reasoning, `reasoning_effort` picks the depth.
 - **`thinkingFormat: "openai"`** — Kimi K3 and GPT-OSS 120B: `reasoning_effort` drives thinking depth.
 - **`supportsStrictMode: false`** — Kimi K3 (no strict JSON-schema tool definitions).
 - **`requiresReasoningContentOnAssistantMessages: true`** — Kimi K3.
@@ -160,16 +158,16 @@ Merge order: `[live|cache|embedded] → patch.json → custom-models.json`
 
 ## Inference-Quality Testing
 
-Validated with [synbad](https://github.com/synthetic-lab/synbad) — Synthetic's tool-calling and reasoning-parsing eval suite for LLM inference providers (`--count 1`, `--reasoning-effort high`, 15 evals per run):
+Validated with [synbad](https://github.com/synthetic-lab/synbad) — Synthetic's tool-calling and reasoning-parsing eval suite for LLM inference providers (`--count 1`, `--reasoning-effort high`; the GLM/Kimi runs used the 15-eval suite, the GPT-OSS re-run on 2026-09-15 the current 13-eval suite):
 
 | Model | Unary | Stream | Notes |
 |-------|-------|--------|-------|
-| GLM 5.2 FP4 | 15/15 ✅ | 15/15 ✅ | |
 | GLM 5.3 FP4 | 15/15 ✅ | 15/15 ✅ | |
 | Kimi K3 | 15/15 ✅ | 15/15 ✅ | |
-| GPT-OSS 120B | 14/15 ⚠️ | pending re-eval | gateway tool-call index bug is fixed upstream |
+| GPT-OSS 120B | 11/13 ⚠️ | 12/13 ⚠️ | re-run 2026-09-15; see below |
+| GLM 5.2 FP4 (retired) | 15/15 ✅ | 15/15 ✅ | evaluated before Coral retired the model |
 
-The remaining gpt-oss quirk is model-side: it answers "Paris and London" with a single batched tool call even when `parallel_tool_calls: true` — not a gateway bug.
+The gpt-oss misses are model-side, not transport: `tools/parallel-tool` fails in both modes because it answers "Paris and London" with one call after another instead of two parallel calls even when `parallel_tool_calls: true`; `reasoning/reasoning-claude-tool-call` (a prompt that asks the model to "put the tool call inside your thinking") occasionally gets exactly that in unary mode — the model narrates the call in its reasoning and answers in text — while streaming passed it every time.
 
 Reproduce:
 
