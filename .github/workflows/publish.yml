@@ -35,15 +35,30 @@ jobs:
         with:
           node-version: 24
 
-      - name: Verify HEAD is the v<version> release commit
+      - name: Resolve the release tag
         id: release
         run: |
           pkg="$(node -p "require('./package.json').version")"
-          if ! git tag --points-at HEAD | grep -qx "v$pkg"; then
-            echo "::error::HEAD is not tagged v$pkg - publish only from a release commit"
+          tag="v$pkg"
+          if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::$tag does not exist - tag the release commit before publishing"
             exit 1
           fi
+
+          # The tarball comes from this ref, but the version is the tag's. Accept a
+          # ref ahead of the tag (e.g. a later CI commit) only when the files that
+          # get published are byte-identical to the tagged ones.
+          files="$(node -p "require('./package.json').files.join(' ')")"
+          head_tree="$(git ls-tree -r HEAD -- $files | sort)"
+          tag_tree="$(git ls-tree -r "refs/tags/$tag" -- $files | sort)"
+          if [ "$head_tree" != "$tag_tree" ]; then
+            echo "::error::published files differ between $GITHUB_REF_NAME and $tag"
+            diff <(echo "$head_tree") <(echo "$tag_tree") || true
+            exit 1
+          fi
+
           echo "version=$pkg" >> "$GITHUB_OUTPUT"
+          echo "Published files match $tag ($(git rev-parse --short "refs/tags/$tag"))"
 
       - name: Check npm for an existing release
         id: published
