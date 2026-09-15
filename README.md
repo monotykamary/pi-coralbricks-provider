@@ -23,7 +23,7 @@ _A [pi](https://github.com/earendil-works/pi-coding-agent) provider extension fo
 - **Per-family thinking levels** — zai-style `thinking` control for GLM (including a *real* off switch), `reasoning_effort` for Kimi K3 and GPT-OSS
 - **Accurate cost tracking** — pricing mirrors Coral's published rates, and cached reads are **$0 on every model**, so pi's computed cost matches Coral's own `usage.cost` to the token
 - **Self-healing model sync** — stale-while-revalidate from the authenticated `/v1/models` (or the unauthenticated [public catalog](https://www.coralbricks.ai/api/public/models) before auth), hot-swapped at session start
-- **synbad-validated** — [synbad](https://github.com/synthetic-lab/synbad) tool-calling and reasoning-parsing evals pass 15/15 on GLM 5.3 and Kimi K3 in both unary and streaming modes
+- **synbad-validated** — [synbad](https://github.com/synthetic-lab/synbad) tool-calling and reasoning-parsing evals pass 13/13 in every run on GLM 5.3 and Kimi K3 in both unary and streaming modes
 
 ## Installation
 
@@ -159,19 +159,17 @@ Merge order: `[live|cache|embedded] → patch.json → custom-models.json`
 
 ## Inference-Quality Testing
 
-Validated with [synbad](https://github.com/synthetic-lab/synbad) — Synthetic's tool-calling and reasoning-parsing eval suite for LLM inference providers (`--count 1`, `--reasoning-effort high`; the GLM 5.3/Kimi runs used the 15-eval suite, the GPT-OSS and GLM 5.3 Flash runs on 2026-09-15 the current 13-eval suite):
+Validated with [synbad](https://github.com/synthetic-lab/synbad) — Synthetic's tool-calling and reasoning-parsing eval suite for LLM inference providers (current 13-eval suite, `--reasoning-effort high`, five `--count 1` runs per mode on 2026-09-15; a cell shows the evals that passed in every run):
 
 | Model | Unary | Stream | Notes |
 |-------|-------|--------|-------|
-| GLM 5.3 FP4 | 15/15 ✅ | 15/15 ✅ | |
-| GLM 5.3 Flash | 13/13 ✅ | 12/13 ⚠️ | re-run 2026-09-15; see below |
-| Kimi K3 | 15/15 ✅ | 15/15 ✅ | |
-| GPT-OSS 120B | 11/13 ⚠️ | 12/13 ⚠️ | re-run 2026-09-15; see below |
-| GLM 5.2 FP4 (retired) | 15/15 ✅ | 15/15 ✅ | evaluated before Coral retired the model |
+| GLM 5.3 FP4 | 13/13 ✅ | 13/13 ✅ | 5/5 runs |
+| GLM 5.3 Flash | 12/13 ⚠️ | 12/13 ⚠️ | `reasoning/reasoning-parsing` passes 4 of 5 runs; see below |
+| Kimi K3 | 13/13 ✅ | 13/13 ✅ | 5/5 runs |
+| GPT-OSS 120B | 12/13 ⚠️ | 12/13 ⚠️ | `tools/parallel-tool` 0 of 5 runs; see below |
+| GLM 5.2 FP4 (retired) | 15/15 ✅ | 15/15 ✅ | 15-eval suite, single run, before Coral retired the model |
 
-The gpt-oss misses are model-side, not transport: `tools/parallel-tool` fails in both modes because it answers "Paris and London" with one call after another instead of two parallel calls even when `parallel_tool_calls: true`; `reasoning/reasoning-claude-tool-call` (a prompt that asks the model to "put the tool call inside your thinking") occasionally gets exactly that in unary mode — the model narrates the call in its reasoning and answers in text — while streaming passed it every time.
-
-GLM 5.3 Flash's streaming miss is `reasoning/reasoning-parsing`: on the trivial prompt it uses, Flash occasionally answers without a think block (about 1 in 5 streams and 1 in 8 unary responses in our sampling); the answer itself is unaffected, and a second full unary pass was 13/13.
+The two misses are model-side, not transport: gpt-oss answers "Paris and London" with one call after another instead of two parallel calls even when `parallel_tool_calls: true`, in every run; and on the trivial prompt `reasoning-parsing` uses, GLM 5.3 Flash answers without a think block about one run in five, in both modes, with the answer itself unaffected.
 
 Reproduce:
 
