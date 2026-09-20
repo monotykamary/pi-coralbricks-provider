@@ -208,7 +208,14 @@ describe("embedded model catalog invariants", () => {
 
   it("separates current and recently removed Coral models", () => {
     expect(models.map((m) => m.id).sort()).toEqual(["glm-5.3-flash-fp4", "glm-5.3-fp4", "gpt-oss-120b", "kimi-k3"]);
-    expect(deprecatedModels.map((m) => m.id)).toEqual(["glm-5.2-fp4"]);
+    // Deprecated entries live only for the updater's 14-day grace window
+    // (evicted once now - deprecatedAt exceeds DEPRECATED_TTL_MS), so assert
+    // the separation contract rather than a pinned id.
+    expect(deprecatedModels.filter((m) => models.some((active) => active.id === m.id))).toEqual([]);
+    expect(new Set(deprecatedModels.map((m) => m.id)).size).toBe(deprecatedModels.length);
+    for (const m of deprecatedModels) {
+      expect(Number.isNaN(Date.parse(m.deprecatedAt ?? ""))).toBe(false);
+    }
   });
 
   it("has well-formed costs with free cached reads", () => {
@@ -225,7 +232,9 @@ describe("embedded model catalog invariants", () => {
 
   it("keeps pricing aligned with Coral's published rates", () => {
     const byId = Object.fromEntries(catalog.map((m) => [m.id, m]));
-    expect(byId["glm-5.2-fp4"].cost).toMatchObject({ input: 1.12, output: 4.4 });
+    // glm-5.2-fp4 is delisted; it is present only during its grace window.
+    const glm52 = byId["glm-5.2-fp4"];
+    if (glm52) expect(glm52.cost).toMatchObject({ input: 1.12, output: 4.4 });
     expect(byId["glm-5.3-fp4"].cost).toMatchObject({ input: 1.12, output: 4.4 });
     expect(byId["kimi-k3"].cost).toMatchObject({ input: 3, output: 15 });
     expect(byId["gpt-oss-120b"].cost).toMatchObject({ input: 0.12, output: 0.6 });
@@ -243,7 +252,26 @@ describe("embedded model catalog invariants", () => {
   });
 
   it("maps thinking levels per upstream model family", () => {
-    const effective = buildModels(modelsData as any, customModelsData as any, patchData as any);
+    // GLM 5.2 is delisted and embedded only during its grace window, so inject
+    // its last-known definition to keep the family mapping covered permanently.
+    const glm52Fixture = {
+      id: "glm-5.2-fp4",
+      name: "GLM 5.2 FP4",
+      reasoning: true,
+      input: ["text"],
+      cost: { input: 1.12, output: 4.4, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1048576,
+      maxTokens: 131072,
+      thinkingLevelMap: { off: "none", minimal: null, low: null, medium: null, high: "high", xhigh: null, max: "max" },
+      compat: {
+        supportsStore: false,
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: true,
+        maxTokensField: "max_tokens",
+        thinkingFormat: "zai",
+      },
+    };
+    const effective = buildModels([...modelsData, glm52Fixture] as any, customModelsData as any, patchData as any);
     const byId = Object.fromEntries(effective.map((m) => [m.id, m]));
     // GLM 5.2: zai format, off→disabled + high/max efforts
     expect(byId["glm-5.2-fp4"].compat?.thinkingFormat).toBe("zai");
