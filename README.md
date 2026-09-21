@@ -83,7 +83,6 @@ pi
 | GLM 5.3 Flash | 1.0M | ✅ | ✅ | $0.15 | — | $0.50 |
 | GLM 5.3 FP4 | 1.0M | ❌ | ✅ | $1.12 | — | $4.40 |
 | GPT-OSS 120B | 131K | ❌ | ✅ | $0.12 | — | $0.60 |
-| Kimi K3 | 1.0M | ✅ | ✅ | $3.00 | — | $15.00 |
 
 *Costs are per million tokens. Cache Read shows — because Coral bills cached input at **$0** on every model. Prices subject to change — check [Coral's live catalog](https://www.coralbricks.ai/api/public/models).*
 
