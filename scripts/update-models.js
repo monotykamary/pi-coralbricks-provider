@@ -136,6 +136,7 @@ function resolveApiKey() {
 }
 
 const MODELS_API_URL = 'https://inference.coralbricks.ai/v1/models';
+const CHAT_COMPLETIONS_URL = 'https://inference.coralbricks.ai/v1/chat/completions';
 const PUBLIC_CATALOG_URL = 'https://www.coralbricks.ai/api/public/models';
 const MODELS_JSON_PATH = path.join(__dirname, '..', 'models.json');
 const PATCH_JSON_PATH = path.join(__dirname, '..', 'patch.json');
@@ -431,9 +432,41 @@ function updateReadme(models) {
 // longer lists into deprecated-models.json (stamped with deprecatedAt) instead
 // of dropping them; the runtime appends them back so sessions and saved model
 // settings keep working, and after 14 days they are evicted permanently.
+//
+// The grace period exists for a model that is still ANSWERING while it leaves
+// the catalog. A retired one is not: Coral answers 404 with
+// `error.code == "model_retired"`, so keeping it registered only offers the
+// user a model that cannot reply, and /model still lists it for two weeks.
+// Each delisted model is probed once, and a retired one is dropped instead of
+// parked. Anything else — an unknown id, a key without access, a network
+// blip — keeps the grace period, because only `model_retired` is a statement
+// that the model is gone for everybody rather than missing for this key.
 const DEPRECATED_MODEL_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const RETIRED_PROBE_TIMEOUT_MS = 10000;
 
-function updateDeprecatedModels(modelsJsonPath, newModels) {
+/**
+ * Ask the gateway whether a model is retired. Returns true ONLY on an explicit
+ * 404 `model_retired`; every other outcome returns false, so a probe that
+ * cannot answer never shortens a grace period.
+ */
+async function isRetiredUpstream(id, apiKey) {
+  if (!apiKey) return false;
+  try {
+    const response = await fetch(CHAT_COMPLETIONS_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: id, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] }),
+      signal: AbortSignal.timeout(RETIRED_PROBE_TIMEOUT_MS),
+    });
+    if (response.status !== 404) return false;
+    const body = await response.json();
+    return body?.error?.code === 'model_retired';
+  } catch {
+    return false;   // offline, timeout, unparseable body: keep the grace period
+  }
+}
+
+async function updateDeprecatedModels(modelsJsonPath, newModels, apiKey) {
   const deprecatedPath = path.join(path.dirname(modelsJsonPath), 'deprecated-models.json');
 
   let oldModels = [];
@@ -453,18 +486,36 @@ function updateDeprecatedModels(modelsJsonPath, newModels) {
   const added = [];
   const resurrected = [];
   const evicted = [];
+  const retired = [];
 
-  for (const old of oldModels) {
-    if (old && old.id && !currentIds.has(old.id) && !deprecated[old.id]) {
-      deprecated[old.id] = { ...old, deprecatedAt: now };
-      added.push(old.id);
+  const candidates = oldModels.filter((old) => old && old.id && !currentIds.has(old.id) && !deprecated[old.id]);
+  // Probe the delisted models plus anything already parked: a model can retire
+  // during its own grace period, which is exactly when it starts 404ing.
+  const parked = Object.keys(deprecated).filter((id) => !currentIds.has(id));
+  const toProbe = [...new Set([...candidates.map((m) => m.id), ...parked])];
+  const retiredIds = new Set(
+    (await Promise.all(toProbe.map(async (id) => ((await isRetiredUpstream(id, apiKey)) ? id : null))))
+      .filter((id) => id !== null)
+  );
+
+  for (const old of candidates) {
+    if (retiredIds.has(old.id)) {
+      retired.push(old.id);
+      continue;   // retired upstream: 404s, so a grace period buys nothing
     }
+    deprecated[old.id] = { ...old, deprecatedAt: now };
+    added.push(old.id);
   }
 
   for (const [id, entry] of Object.entries(deprecated)) {
     if (currentIds.has(id)) {
       delete deprecated[id];
       resurrected.push(id);
+      continue;
+    }
+    if (retiredIds.has(id)) {
+      delete deprecated[id];
+      retired.push(id);
       continue;
     }
     const removedAt = Date.parse(entry && entry.deprecatedAt ? entry.deprecatedAt : '');
@@ -474,9 +525,9 @@ function updateDeprecatedModels(modelsJsonPath, newModels) {
     }
   }
 
-  if (added.length > 0 || resurrected.length > 0 || evicted.length > 0) {
+  if (added.length > 0 || resurrected.length > 0 || evicted.length > 0 || retired.length > 0) {
     fs.writeFileSync(deprecatedPath, JSON.stringify(deprecated, null, 2) + '\n');
-    console.log('Updated deprecated-models.json ' + JSON.stringify({ added, resurrected, evicted }));
+    console.log('Updated deprecated-models.json ' + JSON.stringify({ added, resurrected, evicted, retired }));
   }
 }
 
@@ -519,7 +570,7 @@ async function main() {
 
     // Save models.json (pure API output, no patch/custom baked in)
     // Move delisted models to deprecated-models.json BEFORE models.json is overwritten
-    updateDeprecatedModels(MODELS_JSON_PATH, models);
+    await updateDeprecatedModels(MODELS_JSON_PATH, models, resolveApiKey());
     saveJson(MODELS_JSON_PATH, models);
 
     // Build the README model list: base → patch → custom. Grace-period models stay
@@ -551,4 +602,10 @@ async function main() {
   }
 }
 
-main();
+// Run only when invoked as a script, so the deprecation logic below can be
+// imported by tests without kicking off a sync.
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  main();
+}
+
+export { isRetiredUpstream, updateDeprecatedModels };

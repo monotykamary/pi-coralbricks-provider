@@ -1,7 +1,7 @@
 {
   "name": "pi-coralbricks-provider",
   "version": "1.0.17",
-  "description": "CoralBricks provider extension for pi - Access GLM 5.3, GLM 5.3 Flash, DeepSeek V4.1 Flash, and GPT-OSS 120B through the Coral Inference API",
+  "description": "CoralBricks provider extension for pi - Access GLM 5.3, GLM 5.3 Flash, and DeepSeek V4.1 Flash through the Coral Inference API",
   "author": "monotykamary",
   "homepage": "https://github.com/monotykamary/pi-coralbricks-provider#readme",
   "repository": {
@@ -31,7 +31,7 @@
     "llm",
     "glm",
     "deepseek",
-    "gpt-oss"
+    "deepseek"
   ],
   "license": "MIT",
   "files": [
