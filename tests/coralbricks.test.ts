@@ -16,14 +16,15 @@ import deprecatedData from "../deprecated-models.json" with { type: "json" };
 
 const DEPRECATED_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
-// A Coral /v1/models row shaped exactly as the gateway returns it.
-const v1KimiRow = {
-  id: "kimi-k3",
+// A Coral /v1/models row shaped as the gateway returns it (2026-09-22, less the
+// rolling speed/latency/cache-hit stats, which the transform ignores).
+const v1DeepSeekRow = {
+  id: "deepseek-v4.1-flash-fast-fp4",
   object: "model",
   owned_by: "coralbricks",
   context_length: 1048576,
-  created: 1787000000,
-  pricing: { cached_input_per_m: 0, input_per_m: 3, output_per_m: 15 },
+  created: 1789000000,
+  pricing: { cache_write_multiple: 0.3, cache_write_per_m: 0.09, cached_input_per_m: 0, input_per_m: 0.3, output_per_m: 1.2 },
   supports_chat: true,
   supports_image_input: true,
   supports_tools: true,
@@ -45,10 +46,10 @@ const catalogGlmRow = {
 
 describe("transformApiModel (/v1/models rows)", () => {
   it("maps pricing, context, and image support", () => {
-    const m = transformApiModel(v1KimiRow)!;
-    expect(m.id).toBe("kimi-k3");
+    const m = transformApiModel(v1DeepSeekRow)!;
+    expect(m.id).toBe("deepseek-v4.1-flash-fast-fp4");
     expect(m.input).toEqual(["text", "image"]);
-    expect(m.cost).toEqual({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 });
+    expect(m.cost).toEqual({ input: 0.3, output: 1.2, cacheRead: 0, cacheWrite: 0.09 });
     expect(m.contextWindow).toBe(1048576);
     expect(m.compat?.supportsStore).toBe(false);
     expect(m.compat?.supportsDeveloperRole).toBe(false);
@@ -56,8 +57,14 @@ describe("transformApiModel (/v1/models rows)", () => {
   });
 
   it("keeps Coral's free cached reads at cacheRead: 0", () => {
-    const m = transformApiModel({ ...v1KimiRow, pricing: { cached_input_per_m: 0, input_per_m: 3, output_per_m: 15 } })!;
+    const m = transformApiModel(v1DeepSeekRow)!;
     expect(m.cost.cacheRead).toBe(0);
+  });
+
+  it("bills cache writes at cache_write_per_m, and 0 when a row omits it", () => {
+    expect(transformApiModel(v1DeepSeekRow)!.cost.cacheWrite).toBe(0.09);
+    const { cache_write_per_m: _omitted, ...pricing } = v1DeepSeekRow.pricing;
+    expect(transformApiModel({ ...v1DeepSeekRow, pricing })!.cost.cacheWrite).toBe(0);
   });
 
   it("defaults new models to text-only and applies per-id maxTokens fallbacks", () => {
@@ -158,21 +165,31 @@ describe("buildModels pipeline", () => {
 
 describe("mergeWithEmbedded (live vs curated)", () => {
   it("keeps curated compat/thinking over live rows while live cost wins", () => {
-    const live = transformApiModel({ ...v1KimiRow, pricing: { cached_input_per_m: 0, input_per_m: 5, output_per_m: 20 } })!;
+    const live = transformApiModel({
+      ...v1DeepSeekRow,
+      id: "glm-5.3-fp4",
+      supports_image_input: false,
+      pricing: { cache_write_per_m: 2, cached_input_per_m: 0, input_per_m: 5, output_per_m: 20 },
+    })!;
     const merged = mergeWithEmbedded([live], modelsData as any);
-    const kimi = merged.find((m) => m.id === "kimi-k3")!;
-    expect(kimi.cost.input).toBe(5);
-    expect(kimi.cost.output).toBe(20);
-    expect(kimi.compat?.thinkingFormat).toBe("openai");
-    expect(kimi.compat?.requiresReasoningContentOnAssistantMessages).toBe(true);
-    expect(kimi.thinkingLevelMap).toBeDefined();
-    expect(kimi.input).toEqual(["text", "image"]);
+    const glm = merged.find((m) => m.id === "glm-5.3-fp4")!;
+    expect(glm.cost).toEqual({ input: 5, output: 20, cacheRead: 0, cacheWrite: 2 });
+    expect(glm.compat?.thinkingFormat).toBe("zai");
+    expect(glm.thinkingLevelMap).toBeDefined();
+    expect(glm.input).toEqual(["text"]);
+  });
+
+  it("keeps the embedded cache-write rate when the public catalog (no such field) is the live source", () => {
+    const live = transformCatalogModel(catalogGlmRow)!;
+    expect(live.cost.cacheWrite).toBe(0);
+    const merged = mergeWithEmbedded([live], modelsData as any);
+    expect(merged.find((m) => m.id === "glm-5.3-fp4")!.cost.cacheWrite).toBe(1.68);
   });
 
   it("appends embedded-only models (delisted from live)", () => {
     const live = [transformApiModel({ id: "brand-new-model", pricing: { input_per_m: 1, output_per_m: 2 } })!];
     const merged = mergeWithEmbedded(live, modelsData as any);
-    expect(merged.some((m) => m.id === "kimi-k3")).toBe(true);
+    expect(merged.some((m) => m.id === "gpt-oss-120b")).toBe(true);
     expect(merged.some((m) => m.id === "brand-new-model")).toBe(true);
   });
 });
@@ -207,7 +224,7 @@ describe("embedded model catalog invariants", () => {
   const catalog = [...models, ...deprecatedModels];
 
   it("separates current and recently removed Coral models", () => {
-    expect(models.map((m) => m.id).sort()).toEqual(["glm-5.3-flash-fp4", "glm-5.3-fp4", "gpt-oss-120b", "kimi-k3"]);
+    expect(models.map((m) => m.id).sort()).toEqual(["deepseek-v4.1-flash-fast-fp4", "glm-5.3-flash-fp4", "glm-5.3-fp4", "gpt-oss-120b"]);
     // Deprecated entries live only for the updater's 14-day grace window
     // (evicted once now - deprecatedAt exceeds DEPRECATED_TTL_MS), so assert
     // the separation contract rather than a pinned id.
@@ -218,13 +235,13 @@ describe("embedded model catalog invariants", () => {
     }
   });
 
-  it("has well-formed costs with free cached reads", () => {
+  it("has well-formed costs with free cached reads and a cache-write rate", () => {
     for (const m of models) {
       for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
         expect(typeof m.cost[key]).toBe("number");
       }
       expect(m.cost.cacheRead).toBe(0); // Coral: cached input is free
-      expect(m.cost.cacheWrite).toBe(0);
+      expect(m.cost.cacheWrite).toBeGreaterThan(0); // Coral bills uncached prompt tokens as cache writes
       expect(m.contextWindow).toBeGreaterThanOrEqual(131072);
       expect(m.maxTokens).toBeGreaterThan(0);
     }
@@ -235,9 +252,11 @@ describe("embedded model catalog invariants", () => {
     // glm-5.2-fp4 is delisted; it is present only during its grace window.
     const glm52 = byId["glm-5.2-fp4"];
     if (glm52) expect(glm52.cost).toMatchObject({ input: 1.12, output: 4.4 });
-    expect(byId["glm-5.3-fp4"].cost).toMatchObject({ input: 1.12, output: 4.4 });
-    expect(byId["kimi-k3"].cost).toMatchObject({ input: 3, output: 15 });
-    expect(byId["gpt-oss-120b"].cost).toMatchObject({ input: 0.12, output: 0.6 });
+    // https://www.coralbricks.ai/pricing, 2026-09-22
+    expect(byId["glm-5.3-fp4"].cost).toMatchObject({ input: 1.12, output: 4.4, cacheWrite: 1.68 });
+    expect(byId["glm-5.3-flash-fp4"].cost).toMatchObject({ input: 0.15, output: 0.5, cacheWrite: 0.23 });
+    expect(byId["deepseek-v4.1-flash-fast-fp4"].cost).toMatchObject({ input: 0.3, output: 1.2, cacheWrite: 0.09 });
+    expect(byId["gpt-oss-120b"].cost).toMatchObject({ input: 0.12, output: 0.6, cacheWrite: 0.18 });
   });
 
   it("gives every effective model reasoning config after patch.json", () => {
@@ -283,21 +302,23 @@ describe("embedded model catalog invariants", () => {
     expect(byId["glm-5.3-flash-fp4"].thinkingLevelMap).toMatchObject({ off: "none", low: "low", high: "high", max: "max" });
     expect(byId["glm-5.3-flash-fp4"].maxTokens).toBe(131072);
     expect(byId["glm-5.3-flash-fp4"].input).toEqual(["text", "image"]);
-    // Kimi K3: openai reasoning_effort, no off (thinking cannot be disabled), low/high/max
-    expect(byId["kimi-k3"].compat?.thinkingFormat).toBe("openai");
-    expect(byId["kimi-k3"].thinkingLevelMap).toMatchObject({ off: null, low: "low", high: "high", max: "max" });
-    expect(byId["kimi-k3"].compat?.requiresReasoningContentOnAssistantMessages).toBe(true);
+    // DeepSeek V4.1 Flash: openai reasoning_effort; reasoning is opt-in, so off sends none
+    expect(byId["deepseek-v4.1-flash-fast-fp4"].compat?.thinkingFormat).toBe("openai");
+    expect(byId["deepseek-v4.1-flash-fast-fp4"].compat?.supportsReasoningEffort).toBe(true);
+    expect(byId["deepseek-v4.1-flash-fast-fp4"].thinkingLevelMap).toMatchObject({ off: "none", low: "low", medium: null, high: "high", max: "max" });
     // gpt-oss: low/medium/high reasoning_effort
     expect(byId["gpt-oss-120b"].thinkingLevelMap).toMatchObject({ low: "low", medium: "medium", high: "high" });
   });
 
-  it("flags kimi-k3 vision from the live API flag", () => {
-    const kimi = models.find((m) => m.id === "kimi-k3")!;
-    expect(kimi.input).toContain("image");
+  it("flags vision from the live API flag", () => {
+    const byId = Object.fromEntries(models.map((m) => [m.id, m]));
+    expect(byId["deepseek-v4.1-flash-fast-fp4"].input).toContain("image");
+    expect(byId["glm-5.3-flash-fp4"].input).toContain("image");
+    expect(byId["glm-5.3-fp4"].input).toEqual(["text"]);
   });
 
-  it("curates glm-5.3-flash-fp4 via patch.json; custom models stay empty", () => {
-    expect(Object.keys(patchData)).toEqual(["glm-5.3-flash-fp4"]);
+  it("curates DeepSeek V4.1 Flash and GLM 5.3 Flash via patch.json; custom models stay empty", () => {
+    expect(Object.keys(patchData)).toEqual(["deepseek-v4.1-flash-fast-fp4", "glm-5.3-flash-fp4"]);
     expect(customModelsData).toEqual([]);
   });
 });

@@ -249,6 +249,7 @@ function transformApiModel(apiModel, existingModelsMap) {
     if (typeof pricing.input_per_m === 'number') existing.cost.input = pricing.input_per_m;
     if (typeof pricing.output_per_m === 'number') existing.cost.output = pricing.output_per_m;
     existing.cost.cacheRead = toNumber(pricing.cached_input_per_m);
+    if (typeof pricing.cache_write_per_m === 'number') existing.cost.cacheWrite = pricing.cache_write_per_m;
     existing.input = input;
     return existing;
   }
@@ -263,7 +264,7 @@ function transformApiModel(apiModel, existingModelsMap) {
       input: toNumber(pricing.input_per_m),
       output: toNumber(pricing.output_per_m),
       cacheRead: toNumber(pricing.cached_input_per_m),
-      cacheWrite: 0,
+      cacheWrite: toNumber(pricing.cache_write_per_m),
     },
     contextWindow,
     maxTokens,
@@ -392,8 +393,8 @@ function formatCost(cost) {
 
 function generateReadmeTable(models) {
   const lines = [
-    '| Model | Context | Vision | Reasoning | Input $/M | Cache Read $/M | Output $/M |',
-    '|-------|---------|--------|-----------|-----------|-----------------|------------|',
+    '| Model | Context | Vision | Reasoning | Input $/M | Cache Read $/M | Cache Write $/M | Output $/M |',
+    '|-------|---------|--------|-----------|-----------|-----------------|------------------|------------|',
   ];
 
   for (const model of models) {
@@ -402,9 +403,10 @@ function generateReadmeTable(models) {
     const reasoning = model.reasoning ? '✅' : '❌';
     const inputCost = formatCost(model.cost.input);
     const cacheReadCost = formatCost(model.cost.cacheRead);
+    const cacheWriteCost = formatCost(model.cost.cacheWrite);
     const outputCost = formatCost(model.cost.output);
 
-    lines.push(`| ${model.name} | ${context} | ${vision} | ${reasoning} | ${inputCost} | ${cacheReadCost} | ${outputCost} |`);
+    lines.push(`| ${model.name} | ${context} | ${vision} | ${reasoning} | ${inputCost} | ${cacheReadCost} | ${cacheWriteCost} | ${outputCost} |`);
   }
 
   return lines.join('\n');

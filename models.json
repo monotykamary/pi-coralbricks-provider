@@ -4,13 +4,14 @@
     "name": "DeepSeek V4.1 Flash",
     "reasoning": false,
     "input": [
-      "text"
+      "text",
+      "image"
     ],
     "cost": {
       "input": 0.3,
       "output": 1.2,
       "cacheRead": 0,
-      "cacheWrite": 0
+      "cacheWrite": 0.09
     },
     "contextWindow": 1048576,
     "maxTokens": 32768,
@@ -32,7 +33,7 @@
       "input": 0.15,
       "output": 0.5,
       "cacheRead": 0,
-      "cacheWrite": 0
+      "cacheWrite": 0.23
     },
     "contextWindow": 1048576,
     "maxTokens": 32768,
@@ -53,7 +54,7 @@
       "input": 1.12,
       "output": 4.4,
       "cacheRead": 0,
-      "cacheWrite": 0
+      "cacheWrite": 1.68
     },
     "contextWindow": 1048576,
     "maxTokens": 131072,
@@ -85,7 +86,7 @@
       "input": 0.12,
       "output": 0.6,
       "cacheRead": 0,
-      "cacheWrite": 0
+      "cacheWrite": 0.18
     },
     "contextWindow": 131072,
     "maxTokens": 40960,
