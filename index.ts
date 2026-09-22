@@ -224,7 +224,8 @@ function baseCompat() {
 /**
  * Transform a Coral /v1/models row. Coral reports per-million USD pricing
  * (input_per_m / output_per_m / cached_input_per_m — cached reads are $0 on
- * every model), context_length, and supports_image_input.
+ * every model — and cache_write_per_m, the rate for prompt tokens written to
+ * the cache), context_length, and supports_image_input.
  */
 function transformApiModel(apiModel: any): JsonModel | null {
   if (!apiModel?.id) return null;
@@ -238,7 +239,7 @@ function transformApiModel(apiModel: any): JsonModel | null {
       input: toNumber(pricing.input_per_m),
       output: toNumber(pricing.output_per_m),
       cacheRead: toNumber(pricing.cached_input_per_m),
-      cacheWrite: 0,
+      cacheWrite: toNumber(pricing.cache_write_per_m),
     },
     contextWindow: parseContextWindow(apiModel.context_length),
     maxTokens: DEFAULT_MAX_TOKENS[apiModel.id] ?? FALLBACK_MAX_TOKENS,
@@ -252,7 +253,9 @@ function transformApiModel(apiModel: any): JsonModel | null {
  * (https://www.coralbricks.ai/api/public/models) — the no-auth mirror of the
  * gateway control plane. Fields: slug, name, contextWindow ("1M"),
  * inputPerM / outputPerM. Coral's own prices are authoritative here; the
- * parity/field vendor comparison fields are ignored.
+ * parity/field vendor comparison fields are ignored. The catalog carries no
+ * cache-write rate, so cacheWrite stays 0 and mergeWithEmbedded keeps the
+ * embedded rate.
  */
 function transformCatalogModel(entry: any): JsonModel | null {
   if (!entry?.slug) return null;
@@ -347,7 +350,8 @@ function mergeWithEmbedded(liveModels: JsonModel[], embeddedModels: JsonModel[])
       // Self-heal: live API pricing is authoritative field-by-field. Prefer the
       // live cost when the API reports it (non-zero); fall back to embedded when
       // the API is silent (0). Coral reports cached_input_per_m as 0 because
-      // cached reads are free, which matches the curated cacheRead: 0.
+      // cached reads are free, which matches the curated cacheRead: 0. The
+      // public catalog has no cache-write rate, so its 0 keeps the embedded one.
       // Curation (reasoning/input/compat/name/thinkingLevelMap/maxTokens) still wins via ...embedded.
       result.push({
         ...liveModel,
