@@ -157,17 +157,18 @@ Merge order: `[live|cache|embedded] → patch.json → custom-models.json`
 
 ## Inference-Quality Testing
 
-Validated with [synbad](https://github.com/synthetic-lab/synbad) — Synthetic's tool-calling and reasoning-parsing eval suite for LLM inference providers (current 13-eval suite, `--reasoning-effort high`, five `--count 1` runs per mode on 2026-09-15; a cell shows the evals that passed in every run):
+Validated with [synbad](https://github.com/synthetic-lab/synbad) — Synthetic's tool-calling and reasoning-parsing eval suite for LLM inference providers (current 13-eval suite, `--reasoning-effort high`, five `--count 1` runs per mode on 2026-09-15, DeepSeek on 2026-09-22; a cell shows the evals that passed in every run):
 
 | Model | Unary | Stream | Notes |
 |-------|-------|--------|-------|
 | GLM 5.3 FP4 | 13/13 ✅ | 13/13 ✅ | 5/5 runs |
 | GLM 5.3 Flash | 12/13 ⚠️ | 12/13 ⚠️ | `reasoning/reasoning-parsing` passes 4 of 5 runs; see below |
 | GPT-OSS 120B | 12/13 ⚠️ | 12/13 ⚠️ | `tools/parallel-tool` 0 of 5 runs; see below |
+| DeepSeek V4.1 Flash | 12/13 ⚠️ | 12/13 ⚠️ | `tools/octo-list-no-optional-args` passes 1 of 5 runs; see below |
 | Kimi K3 (retired) | 13/13 ✅ | 13/13 ✅ | 5/5 runs, before Coral retired the model |
 | GLM 5.2 FP4 (retired) | 15/15 ✅ | 15/15 ✅ | 15-eval suite, single run, before Coral retired the model |
 
-The two misses are model-side, not transport: gpt-oss answers "Paris and London" with one call after another instead of two parallel calls even when `parallel_tool_calls: true`, in every run; and on the trivial prompt `reasoning-parsing` uses, GLM 5.3 Flash answers without a think block about one run in five, in both modes, with the answer itself unaffected.
+The three misses are model-side, not transport: gpt-oss answers "Paris and London" with one call after another instead of two parallel calls even when `parallel_tool_calls: true`, in every run; on the trivial prompt `reasoning-parsing` uses, GLM 5.3 Flash answers without a think block about one run in five, in both modes, with the answer itself unaffected; and asked to "call the list tool with no args", DeepSeek V4.1 Flash usually fills in the optional `dirPath` as `"."`.
 
 Reproduce:
 
