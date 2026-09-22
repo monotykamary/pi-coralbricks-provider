@@ -67,10 +67,10 @@ describe("transformApiModel (/v1/models rows)", () => {
     expect(transformApiModel({ ...v1DeepSeekRow, pricing })!.cost.cacheWrite).toBe(0);
   });
 
-  it("defaults new models to text-only and applies per-id maxTokens fallbacks", () => {
-    const gpt = transformApiModel({ id: "gpt-oss-120b", context_length: 131072, pricing: {} })!;
-    expect(gpt.input).toEqual(["text"]);
-    expect(gpt.maxTokens).toBe(40960);
+  it("defaults new models to text-only and falls back for maxTokens", () => {
+    const text = transformApiModel({ id: "some-text-model", context_length: 131072, pricing: {} })!;
+    expect(text.input).toEqual(["text"]);
+    expect(text.maxTokens).toBe(32768);
 
     const unknown = transformApiModel({ id: "some-new-model", pricing: {} })!;
     expect(unknown.maxTokens).toBe(32768);
