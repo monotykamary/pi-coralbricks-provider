@@ -179,9 +179,9 @@ const CACHE_PATH = path.join(CACHE_DIR, `${PROVIDER_ID}-models.json`);
 const LIVE_FETCH_TIMEOUT_MS = 8000;
 
 // Output-token fallbacks for models whose API rows do not report a limit.
-const DEFAULT_MAX_TOKENS: Record<string, number> = {
-  "gpt-oss-120b": 40960,
-};
+// Empty today: every served model reports max_output_tokens. Keyed by model id
+// when one does not.
+const DEFAULT_MAX_TOKENS: Record<string, number> = {};
 const FALLBACK_MAX_TOKENS = 32768;
 
 function toNumber(value: unknown): number {

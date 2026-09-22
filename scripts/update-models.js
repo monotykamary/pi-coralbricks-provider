@@ -144,7 +144,7 @@ const CUSTOM_MODELS_JSON_PATH = path.join(__dirname, '..', 'custom-models.json')
 const README_PATH = path.join(__dirname, '..', 'README.md');
 
 // Output-token fallbacks for models whose API rows do not report a limit.
-const DEFAULT_MAX_TOKENS = { 'gpt-oss-120b': 40960 };
+const DEFAULT_MAX_TOKENS = {};   // per-id output-token fallbacks; empty while every served model reports one
 const FALLBACK_MAX_TOKENS = 32768;
 
 // Helpers
