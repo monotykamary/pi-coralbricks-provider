@@ -189,7 +189,7 @@ describe("mergeWithEmbedded (live vs curated)", () => {
   it("appends embedded-only models (delisted from live)", () => {
     const live = [transformApiModel({ id: "brand-new-model", pricing: { input_per_m: 1, output_per_m: 2 } })!];
     const merged = mergeWithEmbedded(live, modelsData as any);
-    expect(merged.some((m) => m.id === "gpt-oss-120b")).toBe(true);
+    expect(merged.some((m) => m.id === "glm-5.3-fp4")).toBe(true);
     expect(merged.some((m) => m.id === "brand-new-model")).toBe(true);
   });
 });
@@ -224,7 +224,7 @@ describe("embedded model catalog invariants", () => {
   const catalog = [...models, ...deprecatedModels];
 
   it("separates current and recently removed Coral models", () => {
-    expect(models.map((m) => m.id).sort()).toEqual(["deepseek-v4.1-flash-fast-fp4", "glm-5.3-flash-fp4", "glm-5.3-fp4", "gpt-oss-120b"]);
+    expect(models.map((m) => m.id).sort()).toEqual(["deepseek-v4.1-flash-fast-fp4", "glm-5.3-flash-fp4", "glm-5.3-fp4"]);
     // Deprecated entries live only for the updater's 14-day grace window
     // (evicted once now - deprecatedAt exceeds DEPRECATED_TTL_MS), so assert
     // the separation contract rather than a pinned id.
@@ -256,7 +256,6 @@ describe("embedded model catalog invariants", () => {
     expect(byId["glm-5.3-fp4"].cost).toMatchObject({ input: 1.12, output: 4.4, cacheWrite: 1.68 });
     expect(byId["glm-5.3-flash-fp4"].cost).toMatchObject({ input: 0.15, output: 0.5, cacheWrite: 0.23 });
     expect(byId["deepseek-v4.1-flash-fast-fp4"].cost).toMatchObject({ input: 0.3, output: 1.2, cacheWrite: 0.09 });
-    expect(byId["gpt-oss-120b"].cost).toMatchObject({ input: 0.12, output: 0.6, cacheWrite: 0.18 });
   });
 
   it("gives every effective model reasoning config after patch.json", () => {
@@ -306,8 +305,6 @@ describe("embedded model catalog invariants", () => {
     expect(byId["deepseek-v4.1-flash-fast-fp4"].compat?.thinkingFormat).toBe("openai");
     expect(byId["deepseek-v4.1-flash-fast-fp4"].compat?.supportsReasoningEffort).toBe(true);
     expect(byId["deepseek-v4.1-flash-fast-fp4"].thinkingLevelMap).toMatchObject({ off: "none", low: "low", medium: null, high: "high", max: "max" });
-    // gpt-oss: low/medium/high reasoning_effort
-    expect(byId["gpt-oss-120b"].thinkingLevelMap).toMatchObject({ low: "low", medium: "medium", high: "high" });
   });
 
   it("flags vision from the live API flag", () => {

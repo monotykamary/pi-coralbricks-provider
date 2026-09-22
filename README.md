@@ -2,7 +2,7 @@
 
 # 🪸 pi-coralbricks-provider
 
-**GLM 5.3, GLM 5.3 Flash, DeepSeek V4.1 Flash & GPT-OSS 120B through [Coral Bricks](https://www.coralbricks.ai)**
+**GLM 5.3, GLM 5.3 Flash & DeepSeek V4.1 Flash through [Coral Bricks](https://www.coralbricks.ai)**
 
 _A [pi](https://github.com/earendil-works/pi-coding-agent) provider extension for Coral's OpenAI-compatible inference gateway — up to **1M context** on open models._
 
@@ -17,10 +17,10 @@ _A [pi](https://github.com/earendil-works/pi-coding-agent) provider extension fo
 
 ## Features
 
-- **4 reasoning models** from Coral's live catalog — GLM 5.3 FP4, GLM 5.3 Flash, DeepSeek V4.1 Flash, and GPT-OSS 120B
+- **3 reasoning models** from Coral's live catalog — GLM 5.3 FP4, GLM 5.3 Flash, and DeepSeek V4.1 Flash
 - **1M token context** on GLM and DeepSeek, with vision (image input) on GLM 5.3 Flash and DeepSeek V4.1 Flash
 - **OpenAI-compatible API** — standard `/v1/chat/completions`, streaming, and tool calling
-- **Per-family thinking levels** — zai-style `thinking` control for GLM (including a *real* off switch), `reasoning_effort` for DeepSeek V4.1 Flash and GPT-OSS
+- **Per-family thinking levels** — zai-style `thinking` control for GLM (including a *real* off switch), `reasoning_effort` for DeepSeek V4.1 Flash
 - **Accurate cost tracking** — input, cache-write and output rates mirror Coral's [published pricing](https://www.coralbricks.ai/pricing), and cached reads are **$0 on every model**
 - **Self-healing model sync** — stale-while-revalidate from the authenticated `/v1/models` (or the unauthenticated [public catalog](https://www.coralbricks.ai/api/public/models) before auth), hot-swapped at session start
 - **synbad-validated** — [synbad](https://github.com/synthetic-lab/synbad) tool-calling and reasoning-parsing evals pass 13/13 in every run on GLM 5.3 in both unary and streaming modes
@@ -83,7 +83,6 @@ pi
 | DeepSeek V4.1 Flash | 1.0M | ✅ | ✅ | $0.30 | — | $0.09 | $1.20 |
 | GLM 5.3 Flash | 1.0M | ✅ | ✅ | $0.15 | — | $0.23 | $0.50 |
 | GLM 5.3 FP4 | 1.0M | ❌ | ✅ | $1.12 | — | $1.68 | $4.40 |
-| GPT-OSS 120B | 131K | ❌ | ✅ | $0.12 | — | $0.18 | $0.60 |
 
 *Costs are per million tokens. Cache Read shows — because Coral bills cached input at **$0** on every model. Prompt tokens Coral has not cached yet are billed once at the Cache Write rate, in place of the Input rate. Prices subject to change — check [Coral's live catalog](https://www.coralbricks.ai/api/public/models).*
 
@@ -132,11 +131,9 @@ Verified against the live gateway:
 | GLM 5.3 FP4 | `thinking: {type}` + `reasoning_effort` | ✅ | ✅ | — | ✅ | ✅ |
 | GLM 5.3 Flash | `thinking: {type}` + `reasoning_effort` | ✅ | ✅ | — | ✅ | ✅ |
 | DeepSeek V4.1 Flash | `reasoning_effort` | ✅ | ✅ | — | ✅ | ✅ |
-| GPT-OSS 120B | `reasoning_effort` | — | ✅ | ✅ | ✅ | — |
 
 - **GLM** accepts zai-style `thinking: {type: "disabled"}` on Coral — pi's *off* level turns thinking off, though a short preamble of a few dozen tokens can still appear (the upstream Z.ai API has no off at all, so this differs from the canonical Z.ai map).
 - **DeepSeek V4.1 Flash** reasons only when asked: a request without `reasoning_effort`, or with `"none"`, gets no reasoning, which is what pi's *off* sends. `thinking: {type}` has no effect on this model.
-- **GPT-OSS** exposes the standard low/medium/high reasoning efforts; reasoning arrives in `reasoning_content`.
 - Coral streams a duplicate `reasoning` field alongside `reasoning_content`; pi dedupes these automatically.
 
 ## Compat Settings
@@ -146,7 +143,7 @@ Coral's gateway follows the OpenAI Chat Completions API:
 - **`supportsStore: false`** / **`supportsDeveloperRole: false`** — all models; Coral serves open models on the classic roles.
 - **`maxTokensField: "max_tokens"`** — all models.
 - **`thinkingFormat: "zai"`** — GLM 5.3: `thinking: {type: "enabled"|"disabled"}` toggles reasoning, `reasoning_effort` picks the depth.
-- **`thinkingFormat: "openai"`** — DeepSeek V4.1 Flash and GPT-OSS 120B: `reasoning_effort` drives thinking depth.
+- **`thinkingFormat: "openai"`** — DeepSeek V4.1 Flash: `reasoning_effort` drives thinking depth.
 
 ### Patch Overrides & Custom Models
 
@@ -163,12 +160,12 @@ Validated with [synbad](https://github.com/synthetic-lab/synbad) — Synthetic's
 |-------|-------|--------|-------|
 | GLM 5.3 FP4 | 13/13 ✅ | 13/13 ✅ | 5/5 runs |
 | GLM 5.3 Flash | 12/13 ⚠️ | 12/13 ⚠️ | `reasoning/reasoning-parsing` passes 4 of 5 runs; see below |
-| GPT-OSS 120B | 12/13 ⚠️ | 12/13 ⚠️ | `tools/parallel-tool` 0 of 5 runs; see below |
+| GPT-OSS 120B (retired) | 12/13 ⚠️ | 12/13 ⚠️ | `tools/parallel-tool` 0 of 5 runs, before Coral retired the model |
 | DeepSeek V4.1 Flash | 12/13 ⚠️ | 12/13 ⚠️ | `tools/octo-list-no-optional-args` passes 1 of 5 runs; see below |
 | Kimi K3 (retired) | 13/13 ✅ | 13/13 ✅ | 5/5 runs, before Coral retired the model |
 | GLM 5.2 FP4 (retired) | 15/15 ✅ | 15/15 ✅ | 15-eval suite, single run, before Coral retired the model |
 
-The three misses are model-side, not transport: gpt-oss answers "Paris and London" with one call after another instead of two parallel calls even when `parallel_tool_calls: true`, in every run; on the trivial prompt `reasoning-parsing` uses, GLM 5.3 Flash answers without a think block about one run in five, in both modes, with the answer itself unaffected; and asked to "call the list tool with no args", DeepSeek V4.1 Flash usually fills in the optional `dirPath` as `"."`.
+The misses are model-side, not transport: gpt-oss answered "Paris and London" with one call after another instead of two parallel calls even when `parallel_tool_calls: true`, in every run; on the trivial prompt `reasoning-parsing` uses, GLM 5.3 Flash answers without a think block about one run in five, in both modes, with the answer itself unaffected; and asked to "call the list tool with no args", DeepSeek V4.1 Flash usually fills in the optional `dirPath` as `"."`.
 
 Reproduce:
 
