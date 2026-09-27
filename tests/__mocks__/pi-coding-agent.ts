@@ -1,4 +1,13 @@
 // Stub for @earendil-works/pi-coding-agent peer dependency
+export class DynamicBorder {
+  constructor(private color: (text: string) => string) {}
+  render(width: number) { return [this.color("─".repeat(Math.max(1, width)))]; }
+  invalidate() {}
+}
+export function getSettingsListTheme() {
+  const identity = (text: string) => text;
+  return { label: identity, value: identity, description: identity, cursor: "→ ", hint: identity };
+}
 
 import os from "os";
 import path from "path";
@@ -10,6 +19,7 @@ export function getAgentDir(): string {
 
 export interface ExtensionAPI {
   registerProvider(_name: string, _provider: any): void;
+  registerCommand(_name: string, _command: any): void;
   on(_event: string, _handler: any): void;
   appendEntry(_type: string, _data: any): void;
   events: { emit(_event: string, _data: any): void };
