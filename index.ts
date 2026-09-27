@@ -1,7 +1,7 @@
 /**
  * CoralBricks Provider Extension
  *
- * Registers CoralBricks as a custom provider using the openai-completions API.
+ * Registers CoralBricks with Chat Completions (default) or opt-in Responses.
  * Base URL: https://inference.coralbricks.ai/v1
  *
  * Model resolution strategy: Stale-While-Revalidate
@@ -31,7 +31,8 @@
 
 import { getAgentDir, type ExtensionAPI, type ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessageEventStream, SimpleStreamOptions } from "@earendil-works/pi-ai/compat";
-import { clampThinkingLevel, streamOpenAICompletions } from "@earendil-works/pi-ai/compat";
+import { clampThinkingLevel, streamOpenAICompletions, streamOpenAIResponses } from "@earendil-works/pi-ai/compat";
+import { loadConfig, registerSettingsCommand } from "./settings";
 import modelsData from "./models.json" with { type: "json" };
 import customModelsData from "./custom-models.json" with { type: "json" };
 import patchData from "./patch.json" with { type: "json" };
@@ -448,7 +449,8 @@ export function streamCoral(
   const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
   const { reasoning: _reasoning, ...streamOptions } = options ?? {};
 
-  return streamOpenAICompletions(model, context, {
+  const stream = model.api === "openai-responses" ? streamOpenAIResponses : streamOpenAICompletions;
+  return stream(model, context, {
     ...streamOptions,
     reasoningEffort,
     apiKey,
@@ -471,34 +473,39 @@ export default function (pi: ExtensionAPI) {
   const customModels = customModelsData as JsonModel[];
   const patches = patchData as PatchData;
 
-  const staleBase = loadStaleModels(embeddedModels);
-  const staleModels = buildModels(staleBase, customModels, patches);
-
-  pi.registerProvider(PROVIDER_ID, {
-    baseUrl: BASE_URL,
-    apiKey: "$CORALBRICKS_API_KEY",
-    api: "openai-completions",
-    models: staleModels,
-    streamSimple: streamCoral,
+  let config = loadConfig();
+  let currentModels = buildModels(loadStaleModels(embeddedModels), customModels, patches);
+  const selectedApi = () => config.api === "responses" ? "openai-responses" : "openai-completions";
+  function registerProvider() {
+    pi.registerProvider(PROVIDER_ID, {
+      baseUrl: BASE_URL,
+      apiKey: "$CORALBRICKS_API_KEY",
+      api: selectedApi(),
+      models: currentModels,
+      // An already-selected model may still carry the previous API. Snapshot
+      // the current selection per request, without mutating that model/history.
+      streamSimple: (model, context, options) => streamCoral({ ...model, api: selectedApi() }, context, options),
+    });
+  }
+  registerProvider();
+  registerSettingsCommand(pi, () => config, (next) => {
+    config = next;
+    registerProvider();
   });
 
   pi.on("session_start", async (_event, ctx) => {
     revalidateAbort?.abort();
     revalidateAbort = new AbortController();
     const signal = revalidateAbort.signal;
-    resolveApiKey(ctx.modelRegistry).then(() => {
-      revalidateModels(cachedApiKey, embeddedModels, signal).then((freshBase) => {
+    void resolveApiKey(ctx.modelRegistry)
+      .then(() => revalidateModels(cachedApiKey, embeddedModels, signal))
+      .then((freshBase) => {
         if (freshBase && !signal.aborted) {
-          pi.registerProvider(PROVIDER_ID, {
-            baseUrl: BASE_URL,
-            apiKey: "$CORALBRICKS_API_KEY",
-            api: "openai-completions",
-            models: buildModels(freshBase, customModels, patches),
-            streamSimple: streamCoral,
-          });
+          currentModels = buildModels(freshBase, customModels, patches);
+          registerProvider();
         }
-      });
-    });
+      })
+      .catch(() => { /* Keep the stale catalog if credential resolution fails. */ });
   });
 
   pi.on("session_shutdown", () => {

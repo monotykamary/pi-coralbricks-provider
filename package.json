@@ -36,6 +36,7 @@
   "license": "MIT",
   "files": [
     "index.ts",
+    "settings.ts",
     "models.json",
     "deprecated-models.json",
     "custom-models.json",
@@ -45,6 +46,7 @@
     "LICENSE"
   ],
   "devDependencies": {
+    "@earendil-works/pi-tui": "0.87.0",
     "@types/node": "^22.20.0",
     "typescript": "6.0.3",
     "vitest": "4.1.7"
@@ -53,6 +55,9 @@
     "extensions": [
       "./index.ts"
     ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-tui": "*"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "0.87.0",

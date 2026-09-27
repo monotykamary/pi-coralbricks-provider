@@ -102,6 +102,41 @@ pi -e /path/to/pi-coralbricks-provider --model coralbricks/deepseek-v4.1-flash-f
 
 Thinking levels attach to the model id with `:<level>` — e.g. `:low`, `:high`, `:max`, or `:off` (GLM and DeepSeek).
 
+## Provider Settings
+
+Run `/coralbricks-settings` to choose the **API surface**. The searchable,
+bordered settings list matches pi's settings UI; GUI/RPC clients get a selection
+dialog. Changes are saved immediately and apply to the next request without a
+restart, including when a CoralBricks model is already selected.
+
+Settings live at `~/.pi/agent/extensions/coralbricks.json` (or under
+`PI_CODING_AGENT_DIR` when set):
+
+```json
+{ "api": "responses" }
+```
+
+- **`chat-completions`** (default): uses `/v1/chat/completions`; existing behavior
+  is unchanged. Select this to opt back out.
+- **`responses`** (opt-in): uses `/v1/responses` with pi's native text, reasoning,
+  tool-call, image, usage, and cancellation handling. The same model IDs and API
+  key work on both surfaces. Thinking levels map to `reasoning.effort` here.
+
+Responses requests replay the full local conversation and send `store: false`.
+This integration does **not** use `previous_response_id`, server-side conversation
+storage, background jobs, or resumable streams. Coral's broader Responses API is
+documented at [coralbricks.ai/docs](https://www.coralbricks.ai/docs).
+
+Live probes verified text, automatic tool calls, tool-result replay, and switching
+back to Chat Completions on all current models. The gateway currently rejects
+Responses requests that force a named tool (`tool_choice: {"type":"function",
+"name":"..."}`); leave tool selection automatic (pi's default). Errors are surfaced
+without silently falling back to a different API.
+
+Missing, invalid, or unreadable settings default to Chat Completions. Unknown
+JSON fields are preserved when toggling; malformed files must be fixed before
+saving. If editing the file manually, run `/reload` to apply it.
+
 ## Authentication
 
 The Coral API key can be configured in multiple ways (resolved in this order):
