@@ -1,6 +1,6 @@
 {
   "name": "pi-coralbricks-provider",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "CoralBricks provider extension for pi - Access GLM 5.3, GLM 5.3 Flash, and DeepSeek V4.1 Flash through the Coral Inference API",
   "author": "monotykamary",
   "homepage": "https://github.com/monotykamary/pi-coralbricks-provider#readme",
@@ -18,7 +18,8 @@
     "build": "echo 'nothing to build'",
     "check": "tsc --noEmit && vitest run",
     "test": "vitest run",
-    "update-models": "node scripts/update-models.js"
+    "update-models": "node scripts/update-models.js",
+    "test:pi": "node scripts/test-pi-compat.mjs"
   },
   "keywords": [
     "pi-package",
@@ -46,10 +47,12 @@
     "LICENSE"
   ],
   "devDependencies": {
-    "@earendil-works/pi-tui": "0.87.0",
+    "@earendil-works/pi-tui": "0.99.0",
     "@types/node": "^22.20.0",
     "typescript": "6.0.3",
-    "vitest": "4.1.7"
+    "vitest": "4.1.7",
+    "@earendil-works/pi-ai": "0.99.0",
+    "@earendil-works/pi-coding-agent": "0.99.0"
   },
   "pi": {
     "extensions": [
@@ -57,10 +60,8 @@
     ]
   },
   "peerDependencies": {
-    "@earendil-works/pi-tui": "*"
-  },
-  "dependencies": {
-    "@earendil-works/pi-ai": "0.87.0",
-    "@earendil-works/pi-coding-agent": "0.87.0"
+    "@earendil-works/pi-tui": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
   }
 }
