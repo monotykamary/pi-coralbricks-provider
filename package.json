@@ -1,6 +1,6 @@
 {
   "name": "pi-coralbricks-provider",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "description": "CoralBricks provider extension for pi - Access GLM 5.3, GLM 5.3 Flash, and DeepSeek V4.1 Flash through the Coral Inference API",
   "author": "monotykamary",
   "homepage": "https://github.com/monotykamary/pi-coralbricks-provider#readme",
@@ -47,12 +47,12 @@
     "LICENSE"
   ],
   "devDependencies": {
-    "@earendil-works/pi-tui": "0.99.0",
+    "@earendil-works/pi-tui": "1.0.0",
     "@types/node": "^22.20.0",
     "typescript": "6.0.3",
     "vitest": "4.1.7",
-    "@earendil-works/pi-ai": "0.99.0",
-    "@earendil-works/pi-coding-agent": "0.99.0"
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.0"
   },
   "pi": {
     "extensions": [
