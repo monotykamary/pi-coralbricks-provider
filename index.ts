@@ -1,7 +1,8 @@
 /**
  * CoralBricks Provider Extension
  *
- * Registers CoralBricks with Chat Completions (default) or opt-in Responses.
+ * Registers CoralBricks with Chat Completions (default) or opt-in Responses,
+ * optionally parking Responses turns with previous_response_id (park.ts).
  * Base URL: https://inference.coralbricks.ai/v1
  *
  * Model resolution strategy: Stale-While-Revalidate
@@ -33,6 +34,7 @@ import { getAgentDir, type ExtensionAPI, type ModelRegistry } from "@earendil-wo
 import type { AssistantMessageEventStream, SimpleStreamOptions } from "@earendil-works/pi-ai/compat";
 import { clampThinkingLevel, streamOpenAICompletions, streamOpenAIResponses } from "@earendil-works/pi-ai/compat";
 import { loadConfig, registerSettingsCommand } from "./settings";
+import { park, planPark, withParkFallback, type ParkPlan } from "./park";
 import modelsData from "./models.json" with { type: "json" };
 import customModelsData from "./custom-models.json" with { type: "json" };
 import patchData from "./patch.json" with { type: "json" };
@@ -433,6 +435,7 @@ export function streamCoral(
   model: any,
   context: any,
   options?: SimpleStreamOptions,
+  settings: { park?: boolean } = {},
 ): AssistantMessageEventStream {
   const apiKey = options?.apiKey || cachedApiKey || "";
   if (!apiKey) {
@@ -449,12 +452,32 @@ export function streamCoral(
   const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
   const { reasoning: _reasoning, ...streamOptions } = options ?? {};
 
-  const stream = model.api === "openai-responses" ? streamOpenAIResponses : streamOpenAICompletions;
-  return stream(model, context, {
+  if (model.api !== "openai-responses") {
+    return streamOpenAICompletions(model, context, { ...streamOptions, reasoningEffort, apiKey } as any);
+  }
+  if (!settings.park) {
+    return streamOpenAIResponses(model, context, { ...streamOptions, reasoningEffort, apiKey } as any);
+  }
+
+  let plan: ParkPlan | undefined;
+  const baseFetch = (streamOptions as any).fetch ?? ((input: any, init?: any) => globalThis.fetch(input, init));
+  const stream = streamOpenAIResponses(model, context, {
     ...streamOptions,
     reasoningEffort,
     apiKey,
+    fetch: withParkFallback(baseFetch, () => plan),
+    onPayload: async (params: any, payloadModel: any) => {
+      const replaced = await options?.onPayload?.(params, payloadModel);
+      plan = planPark(replaced ?? params, context?.messages, model);
+      return plan.params;
+    },
   } as any);
+  void stream.result().then((message: any) => {
+    if (plan && message?.responseId && message.stopReason !== "error" && message.stopReason !== "aborted") {
+      park(message.responseId, model.id, plan.input);
+    }
+  }, () => {});
+  return stream;
 }
 
 // API Key Resolution (via ModelRegistry)
@@ -484,7 +507,7 @@ export default function (pi: ExtensionAPI) {
       models: currentModels,
       // An already-selected model may still carry the previous API. Snapshot
       // the current selection per request, without mutating that model/history.
-      streamSimple: (model, context, options) => streamCoral({ ...model, api: selectedApi() }, context, options),
+      streamSimple: (model, context, options) => streamCoral({ ...model, api: selectedApi() }, context, options, { park: config.park }),
     });
   }
   registerProvider();
