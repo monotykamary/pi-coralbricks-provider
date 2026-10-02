@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { configPath, loadConfig, saveApi, registerSettingsCommand } from "../settings";
+import { configPath, loadConfig, saveApi, saveConfig, registerSettingsCommand } from "../settings";
 
 let dir: string;
 beforeEach(() => {
@@ -47,6 +47,15 @@ describe("configuration", () => {
     expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ api:"chat-completions", other:{keep:true} });
     expect(fs.readdirSync(path.dirname(configPath()))).toEqual(["coralbricks.json"]);
   });
+  it("reads parking only when it is literally true and preserves it across API toggles", () => {
+    expect(loadConfig().park).toBe(false);
+    raw({ api:"responses", park:"yes" });
+    expect(loadConfig().park).toBe(false);
+    saveConfig({ park:true });
+    expect(loadConfig()).toEqual({ api:"responses", park:true });
+    saveApi("chat-completions");
+    expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ api:"chat-completions", park:true });
+  });
   it("does not overwrite malformed files", () => {
     raw({});
     fs.writeFileSync(configPath(), "broken");
@@ -64,7 +73,23 @@ describe("settings command", () => {
     await handler("", ctx);
     expect(ctx.ui.custom).not.toHaveBeenCalled();
     expect(loadConfig().api).toBe("responses");
-    expect(apply).toHaveBeenCalledWith({api:"responses"});
+    expect(apply).toHaveBeenCalledWith({api:"responses",park:false});
+  });
+  it("asks about parking after choosing Responses over RPC", async () => {
+    const { handler, apply } = command();
+    const ctx = context();
+    ctx.ui.select.mockResolvedValueOnce("responses").mockResolvedValueOnce("on");
+    await handler("", ctx);
+    expect(ctx.ui.select).toHaveBeenCalledTimes(2);
+    expect(loadConfig()).toEqual({ api:"responses", park:true });
+    expect(apply).toHaveBeenLastCalledWith({api:"responses",park:true});
+  });
+  it("does not ask about parking for Chat Completions", async () => {
+    const { handler } = command();
+    const ctx = context();
+    ctx.ui.select.mockResolvedValue("chat-completions");
+    await handler("", ctx);
+    expect(ctx.ui.select).toHaveBeenCalledOnce();
   });
   it("does nothing on cancel or without UI", async () => {
     const { handler, apply } = command();
@@ -122,13 +147,16 @@ describe("settings command", () => {
       component.handleInput("\r");
       expect(loadConfig().api).toBe("responses");
       expect(component.render(80).join("\n")).toContain("responses");
+      component.handleInput("\u001b[B");
+      component.handleInput("\r");
+      expect(loadConfig().park).toBe(true);
       component.invalidate();
       component.handleInput("\u001b");
       expect(done).toHaveBeenCalled();
       expect(render).toHaveBeenCalled();
     });
     await handler("", ctx);
-    expect(apply).toHaveBeenCalledWith({api:"responses"});
+    expect(apply).toHaveBeenCalledWith({api:"responses",park:false});
   });
 });
 
@@ -165,6 +193,18 @@ describe("provider registration", () => {
     await handler("", ctx);
     expect(latest().api).toBe("openai-completions");
     expect(latest().models.some((m:any)=>m.id === "live-only")).toBe(true);
+  });
+  it.each([false, true])("applies parking=%s to Responses requests", async (park) => {
+    saveConfig({ api:"responses", park });
+    const {latest} = await setup();
+    const registration = latest();
+    const model = {...registration.models[0], provider:"coralbricks", baseUrl:registration.baseUrl, api:registration.api};
+    let body: any;
+    await registration.streamSimple(model, {messages:[{role:"user",content:"hi",timestamp:1}]}, {
+      apiKey:"test", maxRetries:0,
+      fetch:async (_input:any, init:any) => { body = JSON.parse(init.body); return Response.json({error:{message:"test"}}, {status:400}); },
+    }).result();
+    expect(body.store).toBe(park);
   });
   it("routes an already selected model through the new API without mutation", async () => {
     const {latest, handler} = await setup();

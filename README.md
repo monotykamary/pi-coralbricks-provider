@@ -109,7 +109,8 @@ Thinking levels attach to the model id with `:<level>` — e.g. `:low`, `:high`,
 
 ## Provider Settings
 
-Run `/coralbricks-settings` to choose the **API surface**. The searchable,
+Run `/coralbricks-settings` to choose the **API surface** and, for Responses,
+whether to **park turns**. The searchable,
 bordered settings list matches pi's settings UI; GUI/RPC clients get a selection
 dialog. Changes are saved immediately and apply to the next request without a
 restart, including when a CoralBricks model is already selected.
@@ -118,7 +119,7 @@ Settings live at `~/.pi/agent/extensions/coralbricks.json` (or under
 `PI_CODING_AGENT_DIR` when set):
 
 ```json
-{ "api": "responses" }
+{ "api": "responses", "park": false }
 ```
 
 - **`chat-completions`** (default): uses `/v1/chat/completions`; existing behavior
@@ -127,10 +128,36 @@ Settings live at `~/.pi/agent/extensions/coralbricks.json` (or under
   tool-call, image, usage, and cancellation handling. The same model IDs and API
   key work on both surfaces. Thinking levels map to `reasoning.effort` here.
 
-Responses requests replay the full local conversation and send `store: false`.
-This integration does **not** use `previous_response_id`, server-side conversation
-storage, background jobs, or resumable streams. Coral's broader Responses API is
-documented at [coralbricks.ai/docs](https://www.coralbricks.ai/docs).
+By default, Responses requests replay the full local conversation and send
+`store: false`. This integration does not use background jobs or resumable
+streams. Coral's broader Responses API is documented at
+[coralbricks.ai/docs](https://www.coralbricks.ai/docs).
+
+### Parking (`"park": true`)
+
+With parking on, every Responses request is sent with `store: true` and the
+next request continues it with `previous_response_id`. pi still builds the full
+transcript, but only the items after the parked response (tool results, the
+next user message) go over the wire. Tools are re-sent every time because Coral
+does not carry them across a chain.
+
+A turn is chained only when the full input starts with exactly what was sent
+for the parked response, followed by that response's own output. Compaction, a
+model switch, an edited or branched history, or a pi restart falls back to a
+full replay, and that request is parked again. If Coral no longer has the parent
+(`previous_response_not_found`), the same request is re-sent once in full.
+Parked ids live in memory only.
+
+Things to know before turning it on:
+
+- Coral keeps every parked response on its side. Deleting a parent breaks the
+  chain, so the extension does not delete them.
+- Coral bills a chained request as the tool definitions plus the new items. The
+  first chained request in a session writes the tool block to cache once, and
+  later ones read it back. With a warm cache, a 7-request tool loop cost about
+  the same as a full replay on DeepSeek V4.1 Flash and about a third more on
+  GLM 5.3 Flash. The parked history itself is not billed again, which matters
+  when Coral evicts a long session's cache.
 
 Live probes verified text, automatic tool calls, tool-result replay, and switching
 back to Chat Completions on all current models. The gateway currently rejects
