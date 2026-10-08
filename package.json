@@ -46,13 +46,16 @@
     "README.md",
     "LICENSE"
   ],
+  "overrides": {
+    "brace-expansion": "5.0.12"
+  },
   "devDependencies": {
-    "@earendil-works/pi-tui": "1.0.0",
+    "@earendil-works/pi-tui": "1.1.0",
     "@types/node": "^22.20.0",
     "typescript": "6.0.3",
     "vitest": "4.1.7",
-    "@earendil-works/pi-ai": "1.0.0",
-    "@earendil-works/pi-coding-agent": "1.0.0"
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0"
   },
   "pi": {
     "extensions": [

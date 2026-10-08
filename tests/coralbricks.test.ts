@@ -233,7 +233,10 @@ describe("embedded model catalog invariants", () => {
   const catalog = [...models, ...deprecatedModels];
 
   it("separates current and recently removed Coral models", () => {
-    expect(models.map((m) => m.id).sort()).toEqual(["deepseek-v4.1-flash-fast", "glm-5.3-fast", "glm-5.3-flash-fast"]);
+    // The live catalog changes independently of this separation contract.
+    expect(models.length).toBeGreaterThan(0);
+    expect(new Set(models.map((m) => m.id)).size).toBe(models.length);
+    expect(models.every((m) => m.deprecatedAt === undefined)).toBe(true);
     // Deprecated entries live only for the updater's 14-day grace window
     // (evicted once now - deprecatedAt exceeds DEPRECATED_TTL_MS), so assert
     // the separation contract rather than a pinned id.
