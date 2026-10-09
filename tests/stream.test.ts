@@ -104,7 +104,7 @@ describe("native Responses stream", () => {
 });
 
 describe("session id", () => {
-  async function requestFor(api: string) {
+  async function requestFor(api: string, options: any = {}) {
     let headers = new Headers();
     let body: any;
     const fetch = vi.fn(async (_input:any, init:any) => {
@@ -115,7 +115,7 @@ describe("session id", () => {
         {id:"c",object:"chat.completion.chunk",created:0,model:"m",choices:[{index:0,delta:{},finish_reason:"stop"}],usage:{prompt_tokens:1,completion_tokens:1,total_tokens:2}},
       ]);
     });
-    await streamCoral(model(api), {messages:[user]}, {apiKey:"k", fetch, maxRetries:0, sessionId:"pi-session-1"} as any).result();
+    await streamCoral(model(api), {messages:[user]}, {apiKey:"k", fetch, maxRetries:0, sessionId:"pi-session-1", ...options} as any).result();
     expect(fetch).toHaveBeenCalledOnce();
     return {headers, body};
   }
@@ -126,5 +126,24 @@ describe("session id", () => {
   });
   it("sends pi's session id on Responses as prompt_cache_key", async () => {
     expect((await requestFor("openai-responses")).body.prompt_cache_key).toBe("pi-session-1");
+  });
+  it("also sends Coral's own session header and the body key on Chat Completions", async () => {
+    const {headers, body} = await requestFor("openai-completions");
+    expect(headers.get("x-coral-session")).toBe("pi-session-1");
+    expect(body.prompt_cache_key).toBe("pi-session-1");
+  });
+  it("sends Coral's own session header on Responses", async () => {
+    expect((await requestFor("openai-responses")).headers.get("x-coral-session")).toBe("pi-session-1");
+  });
+  it("adds no session fields when pi has no session id", async () => {
+    const {headers, body} = await requestFor("openai-completions", {sessionId: undefined});
+    expect(headers.get("x-coral-session")).toBeNull();
+    expect(headers.get("x-session-affinity")).toBeNull();
+    expect(body.prompt_cache_key).toBeUndefined();
+  });
+  it("keeps the session header but drops the cache key when caching is off", async () => {
+    const {headers, body} = await requestFor("openai-completions", {cacheRetention: "none"});
+    expect(headers.get("x-coral-session")).toBe("pi-session-1");
+    expect(body.prompt_cache_key).toBeUndefined();
   });
 });

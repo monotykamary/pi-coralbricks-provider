@@ -451,6 +451,13 @@ async function revalidateModels(apiKey: string | undefined, embeddedModels: Json
   return merged;
 }
 
+/** pi-ai's clampOpenAIPromptCacheKey, inlined: Coral accepts the same field. */
+function clampPromptCacheKey(key: string | undefined): string | undefined {
+  if (key === undefined) return undefined;
+  const chars = Array.from(key);
+  return chars.length <= 64 ? key : chars.slice(0, 64).join("");
+}
+
 export function streamCoral(
   model: any,
   context: any,
@@ -472,30 +479,49 @@ export function streamCoral(
   const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
   const { reasoning: _reasoning, ...streamOptions } = options ?? {};
 
-  // pi-ai's Chat Completions client sends the pi session id (x-session-affinity)
-  // only when the model opts in, and only OpenRouter does by default, so Coral saw
-  // no session id on Completions traffic. Coral uses it to group a conversation's
-  // turns; the Responses client already sends it unconditionally.
+  // Coral groups a conversation's turns by the first session id it finds: a
+  // session header, else the body's prompt_cache_key. pi-ai only sends the id as
+  // x-session-affinity on Chat Completions when a model opts in (forced below),
+  // and omits prompt_cache_key there for every base URL but api.openai.com, so
+  // send Coral's own header on both surfaces and the body key on Completions.
+  const sessionId = (streamOptions as any).sessionId as string | undefined;
+  const sessionHeaders = sessionId
+    ? { "x-coral-session": sessionId, ...((streamOptions as any).headers ?? {}) }
+    : (streamOptions as any).headers;
+  const promptCacheKey = (streamOptions as any).cacheRetention === "none" ? undefined : clampPromptCacheKey(sessionId);
+  const withPromptCacheKey = (params: any) => {
+    if (!promptCacheKey || params?.prompt_cache_key !== undefined) return params;
+    return { ...params, prompt_cache_key: promptCacheKey };
+  };
+
   const compat = { ...model.compat, sendSessionAffinityHeaders: true };
   const streamModel = { ...model, compat };
 
   if (streamModel.api !== "openai-responses") {
-    return streamOpenAICompletions(streamModel, context, { ...streamOptions, reasoningEffort, apiKey } as any);
+    const onPayload = (streamOptions as any).onPayload;
+    return streamOpenAICompletions(streamModel, context, {
+      ...streamOptions,
+      headers: sessionHeaders,
+      reasoningEffort,
+      apiKey,
+      onPayload: async (params: any, payloadModel: any) => withPromptCacheKey((await onPayload?.(params, payloadModel)) ?? params),
+    } as any);
   }
   if (!settings.park) {
-    return streamOpenAIResponses(streamModel, context, { ...streamOptions, reasoningEffort, apiKey } as any);
+    return streamOpenAIResponses(streamModel, context, { ...streamOptions, headers: sessionHeaders, reasoningEffort, apiKey } as any);
   }
 
   let plan: ParkPlan | undefined;
   const baseFetch = (streamOptions as any).fetch ?? ((input: any, init?: any) => globalThis.fetch(input, init));
   const stream = streamOpenAIResponses(streamModel, context, {
     ...streamOptions,
+    headers: sessionHeaders,
     reasoningEffort,
     apiKey,
     fetch: withParkFallback(baseFetch, () => plan),
     onPayload: async (params: any, payloadModel: any) => {
       const replaced = await options?.onPayload?.(params, payloadModel);
-      plan = planPark(replaced ?? params, context?.messages, model);
+      plan = planPark(withPromptCacheKey(replaced ?? params), context?.messages, model);
       return plan.params;
     },
   } as any);
