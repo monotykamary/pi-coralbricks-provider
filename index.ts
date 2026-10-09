@@ -75,10 +75,13 @@ interface JsonModel {
     supportsStrictMode?: boolean;
     requiresReasoningContentOnAssistantMessages?: boolean;
   };
+  /** Curation-only (patch.json): keep a served model out of the catalog. */
+  hidden?: boolean;
 }
 
 interface PatchEntry {
   name?: string;
+  hidden?: boolean;
   reasoning?: boolean;
   input?: ("text" | "image")[];
   cost?: {
@@ -108,6 +111,7 @@ function applyPatch(model: JsonModel, patch: PatchEntry): JsonModel {
   };
 
   if (patch.name !== undefined) result.name = patch.name;
+  if (patch.hidden !== undefined) result.hidden = patch.hidden;
   if (patch.reasoning !== undefined) result.reasoning = patch.reasoning;
   if (patch.input !== undefined) result.input = patch.input;
   if (patch.contextWindow !== undefined) result.contextWindow = patch.contextWindow;
@@ -168,7 +172,11 @@ function buildModels(base: JsonModel[], custom: JsonModel[], patch: PatchData): 
     }
   }
 
-  return Array.from(modelMap.values());
+  // Hidden models stay out of the registered catalog — and therefore out of
+  // `/model` — while `models.json` keeps mirroring what Coral serves for the key.
+  return Array.from(modelMap.values())
+    .filter((m) => !m.hidden)
+    .map(({ hidden: _hidden, ...model }) => model);
 }
 
 // Stale-While-Revalidate Model Sync
@@ -189,6 +197,17 @@ const FALLBACK_MAX_TOKENS = 32768;
 
 function toNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * Full price of a written prompt token. Since 2026-10-08 Coral states the cache write ON TOP
+ * of input (/v1/models cache_write_per_m, catalog cacheWritePerM), and a written token is
+ * billed input + that. pi prices a written token at cacheWrite alone, so add the two. 0 when
+ * the row carries no cache-write rate. Rounded so 1.12 + 0.56 is 1.68, not 1.6800000000000002.
+ */
+function writtenTokenCost(input: number, cacheWriteOnTop: unknown): number {
+  if (typeof cacheWriteOnTop !== "number" || !Number.isFinite(cacheWriteOnTop)) return 0;
+  return Math.round((input + cacheWriteOnTop) * 1e6) / 1e6;
 }
 
 function displayName(id: string): string {
@@ -227,8 +246,9 @@ function baseCompat() {
 /**
  * Transform a Coral /v1/models row. Coral reports per-million USD pricing
  * (input_per_m / output_per_m / cached_input_per_m — cached reads are $0 on
- * every model — and cache_write_per_m, the rate for prompt tokens written to
- * the cache), context_length, and supports_image_input.
+ * every model — and cache_write_per_m, the cache write ON TOP of input for a
+ * prompt token written to the cache), context_length, and supports_image_input.
+ * pi's cacheWrite is the full price of a written token: input + cache_write_per_m.
  */
 function transformApiModel(apiModel: any): JsonModel | null {
   if (!apiModel?.id) return null;
@@ -242,7 +262,7 @@ function transformApiModel(apiModel: any): JsonModel | null {
       input: toNumber(pricing.input_per_m),
       output: toNumber(pricing.output_per_m),
       cacheRead: toNumber(pricing.cached_input_per_m),
-      cacheWrite: toNumber(pricing.cache_write_per_m),
+      cacheWrite: writtenTokenCost(toNumber(pricing.input_per_m), pricing.cache_write_per_m),
     },
     contextWindow: parseContextWindow(apiModel.context_length),
     maxTokens: DEFAULT_MAX_TOKENS[apiModel.id] ?? FALLBACK_MAX_TOKENS,
@@ -255,10 +275,10 @@ function transformApiModel(apiModel: any): JsonModel | null {
  * Transform a row from the public model catalog
  * (https://www.coralbricks.ai/api/public/models) — the no-auth mirror of the
  * gateway control plane. Fields: slug, name, contextWindow ("1M"),
- * inputPerM / outputPerM. Coral's own prices are authoritative here; the
- * parity/field vendor comparison fields are ignored. The catalog carries no
- * cache-write rate, so cacheWrite stays 0 and mergeWithEmbedded keeps the
- * embedded rate.
+ * inputPerM / outputPerM, and since 2026-10-08 cacheWritePerM (the cache write on
+ * top of input). Coral's own prices are authoritative here; the parity/field vendor
+ * comparison fields are ignored. A row without cacheWritePerM leaves cacheWrite 0 so
+ * mergeWithEmbedded keeps the embedded rate.
  */
 function transformCatalogModel(entry: any): JsonModel | null {
   if (!entry?.slug) return null;
@@ -271,7 +291,7 @@ function transformCatalogModel(entry: any): JsonModel | null {
       input: toNumber(entry.inputPerM),
       output: toNumber(entry.outputPerM),
       cacheRead: 0,
-      cacheWrite: 0,
+      cacheWrite: writtenTokenCost(toNumber(entry.inputPerM), entry.cacheWritePerM),
     },
     contextWindow: parseContextWindow(entry.contextWindow),
     maxTokens: DEFAULT_MAX_TOKENS[entry.slug] ?? FALLBACK_MAX_TOKENS,
@@ -452,16 +472,23 @@ export function streamCoral(
   const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
   const { reasoning: _reasoning, ...streamOptions } = options ?? {};
 
-  if (model.api !== "openai-responses") {
-    return streamOpenAICompletions(model, context, { ...streamOptions, reasoningEffort, apiKey } as any);
+  // pi-ai's Chat Completions client sends the pi session id (x-session-affinity)
+  // only when the model opts in, and only OpenRouter does by default, so Coral saw
+  // no session id on Completions traffic. Coral uses it to group a conversation's
+  // turns; the Responses client already sends it unconditionally.
+  const compat = { ...model.compat, sendSessionAffinityHeaders: true };
+  const streamModel = { ...model, compat };
+
+  if (streamModel.api !== "openai-responses") {
+    return streamOpenAICompletions(streamModel, context, { ...streamOptions, reasoningEffort, apiKey } as any);
   }
   if (!settings.park) {
-    return streamOpenAIResponses(model, context, { ...streamOptions, reasoningEffort, apiKey } as any);
+    return streamOpenAIResponses(streamModel, context, { ...streamOptions, reasoningEffort, apiKey } as any);
   }
 
   let plan: ParkPlan | undefined;
   const baseFetch = (streamOptions as any).fetch ?? ((input: any, init?: any) => globalThis.fetch(input, init));
-  const stream = streamOpenAIResponses(model, context, {
+  const stream = streamOpenAIResponses(streamModel, context, {
     ...streamOptions,
     reasoningEffort,
     apiKey,

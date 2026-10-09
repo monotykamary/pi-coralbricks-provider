@@ -14,6 +14,10 @@
  *    same control-plane data without a key (contextWindow like "1M", inputPerM,
  *    outputPerM). Used when no key is configured or /v1/models fails.
  *
+ * The catalog is a subset: it lists each model's canonical slug, not every
+ * variant enabled for a key, so a catalog run only ever adds or keeps models —
+ * it never delists one (see keepUnlistedModels).
+ *
  * models.json is the source of truth for curated specs — the script preserves
  * existing data and only adds new models with API-derived defaults.
  * Curate models.json manually after new model discovery.
@@ -162,6 +166,13 @@ function saveJson(filePath, data) {
   console.log(`✓ Saved ${path.basename(filePath)}`);
 }
 
+// Coral states the cache write ON TOP of input (2026-10-08); pi's cacheWrite is the full
+// price of a written token, input + it. 0 when the row has no cache-write rate.
+function writtenTokenCost(input, cacheWriteOnTop) {
+  if (typeof cacheWriteOnTop !== 'number' || !Number.isFinite(cacheWriteOnTop)) return 0;
+  return Math.round((input + cacheWriteOnTop) * 1e6) / 1e6;
+}
+
 function toNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
@@ -219,18 +230,38 @@ async function fetchPublicCatalog() {
   return models;
 }
 
-async function fetchModels() {
-  const apiKey = resolveApiKey();
+async function fetchModels(apiKey) {
   if (apiKey) {
     try {
-      return await fetchV1Models(apiKey);
+      return { models: await fetchV1Models(apiKey), authoritative: true };
     } catch (error) {
       console.warn(`⚠ /v1/models failed (${error.message}); falling back to public catalog`);
     }
   } else {
     console.warn('⚠ No API key found (no `coralbricks` credential in ' + AUTH_JSON_PATH + ', CORALBRICKS_API_KEY unset); using the public catalog');
   }
-  return fetchPublicCatalog();
+  return { models: await fetchPublicCatalog(), authoritative: false };
+}
+
+/**
+ * The public catalog is a subset of the per-key /v1/models set: it advertises a
+ * model's canonical slug, not every variant enabled for the key (the -fp4 twins
+ * are listed by /v1/models only). It can vouch for what exists, never for what
+ * is gone, so a non-authoritative fetch keeps every already-known model it does
+ * not list: a keyless run may discover models, it may not delist them. Returns
+ * the ids it kept, in the order they were appended.
+ */
+function keepUnlistedModels(models, existingModelsMap, authoritative) {
+  if (authoritative) return [];
+  const seen = new Set(models.map((m) => m.id));
+  const kept = [];
+  for (const [id, existing] of Object.entries(existingModelsMap)) {
+    if (!seen.has(id)) {
+      models.push(existing);
+      kept.push(id);
+    }
+  }
+  return kept;
 }
 
 // Transform API model → models.json entry
@@ -250,7 +281,9 @@ function transformApiModel(apiModel, existingModelsMap) {
     if (typeof pricing.input_per_m === 'number') existing.cost.input = pricing.input_per_m;
     if (typeof pricing.output_per_m === 'number') existing.cost.output = pricing.output_per_m;
     existing.cost.cacheRead = toNumber(pricing.cached_input_per_m);
-    if (typeof pricing.cache_write_per_m === 'number') existing.cost.cacheWrite = pricing.cache_write_per_m;
+    if (typeof pricing.cache_write_per_m === 'number') {
+      existing.cost.cacheWrite = writtenTokenCost(existing.cost.input, pricing.cache_write_per_m);
+    }
     existing.input = input;
     return existing;
   }
@@ -265,7 +298,7 @@ function transformApiModel(apiModel, existingModelsMap) {
       input: toNumber(pricing.input_per_m),
       output: toNumber(pricing.output_per_m),
       cacheRead: toNumber(pricing.cached_input_per_m),
-      cacheWrite: toNumber(pricing.cache_write_per_m),
+      cacheWrite: writtenTokenCost(toNumber(pricing.input_per_m), pricing.cache_write_per_m),
     },
     contextWindow,
     maxTokens,
@@ -287,6 +320,9 @@ function transformCatalogModel(entry, existingModelsMap) {
     if (contextWindow) existing.contextWindow = contextWindow;
     if (typeof entry.inputPerM === 'number') existing.cost.input = entry.inputPerM;
     if (typeof entry.outputPerM === 'number') existing.cost.output = entry.outputPerM;
+    if (typeof entry.cacheWritePerM === 'number') {
+      existing.cost.cacheWrite = writtenTokenCost(existing.cost.input, entry.cacheWritePerM);
+    }
     return existing;
   }
 
@@ -299,7 +335,7 @@ function transformCatalogModel(entry, existingModelsMap) {
       input: toNumber(entry.inputPerM),
       output: toNumber(entry.outputPerM),
       cacheRead: 0,
-      cacheWrite: 0,
+      cacheWrite: writtenTokenCost(toNumber(entry.inputPerM), entry.cacheWritePerM),
     },
     contextWindow,
     maxTokens,
@@ -323,6 +359,7 @@ function applyPatch(model, patch) {
     thinkingLevelMap: model.thinkingLevelMap ? { ...model.thinkingLevelMap } : undefined,
   };
   if (patch.name !== undefined) result.name = patch.name;
+  if (patch.hidden !== undefined) result.hidden = patch.hidden;
   if (patch.reasoning !== undefined) result.reasoning = patch.reasoning;
   if (patch.input !== undefined) result.input = patch.input;
   if (patch.contextWindow !== undefined) result.contextWindow = patch.contextWindow;
@@ -376,7 +413,11 @@ function buildModels(baseModels, customModels, patchData) {
       modelMap.set(model.id, model);
     }
   }
-  return Array.from(modelMap.values());
+  // Mirrors index.ts buildModels: hidden models are served by Coral but kept out
+  // of the catalog the provider offers, so the README table skips them too.
+  return Array.from(modelMap.values())
+    .filter((m) => !m.hidden)
+    .map(({ hidden: _hidden, ...model }) => model);
 }
 
 // README generation
@@ -547,7 +588,8 @@ async function main() {
       return;
     }
 
-    const apiModels = await fetchModels();
+    const apiKey = resolveApiKey();
+    const { models: apiModels, authoritative } = await fetchModels(apiKey);
 
     // Load existing models.json — source of truth for curated specs
     const existingModels = loadJson(MODELS_JSON_PATH);
@@ -562,15 +604,20 @@ async function main() {
       isCatalogShape ? transformCatalogModel(m, existingModelsMap) : transformApiModel(m, existingModelsMap)
     );
 
-    // Live API is authoritative — models absent from API are removed
-    // (embedded data is already used for enrichment in transformApiModel)
+    // Live API is authoritative — models absent from it are removed (embedded
+    // data is already used for enrichment in transformApiModel). A catalog run
+    // is not: keep every known model it does not list.
+    const kept = keepUnlistedModels(models, existingModelsMap, authoritative);
+    if (kept.length > 0) {
+      console.warn(`⚠ Public catalog listed ${kept.length} fewer model(s) than models.json; kept: ${kept.join(', ')}`);
+    }
 
     // Sort by model name
     models.sort((a, b) => a.name.localeCompare(b.name));
 
     // Save models.json (pure API output, no patch/custom baked in)
     // Move delisted models to deprecated-models.json BEFORE models.json is overwritten
-    await updateDeprecatedModels(MODELS_JSON_PATH, models, resolveApiKey());
+    await updateDeprecatedModels(MODELS_JSON_PATH, models, apiKey);
     saveJson(MODELS_JSON_PATH, models);
 
     // Build the README model list: base → patch → custom. Grace-period models stay
@@ -608,4 +655,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToP
   main();
 }
 
-export { isRetiredUpstream, updateDeprecatedModels };
+export { isRetiredUpstream, keepUnlistedModels, updateDeprecatedModels };

@@ -86,7 +86,7 @@ describe("native Responses stream", () => {
     expect(JSON.stringify(p.payload.input)).toContain("Earlier reply");
   });
   it("keeps Chat Completions routing and GLM off semantics unchanged", async () => {
-    const p = await probe(model("openai-completions","glm-5.3-fp4"), undefined, {reasoning:"off"});
+    const p = await probe(model("openai-completions","glm-5.3-fast"), undefined, {reasoning:"off"});
     expect(p.url).toBe(`${BASE_URL}/chat/completions`);
     expect(p.payload).toMatchObject({thinking:{type:"disabled"}});
     expect(p.payload.input).toBeUndefined();
@@ -100,5 +100,31 @@ describe("native Responses stream", () => {
   });
   it("rejects missing credentials before sending", () => {
     expect(()=>streamCoral(model(),{messages:[]})).toThrow("No API key for CoralBricks");
+  });
+});
+
+describe("session id", () => {
+  async function requestFor(api: string) {
+    let headers = new Headers();
+    let body: any;
+    const fetch = vi.fn(async (_input:any, init:any) => {
+      headers = new Headers(init.headers);
+      body = JSON.parse(init.body);
+      return api === "openai-responses" ? sse(textEvents()) : sse([
+        {id:"c",object:"chat.completion.chunk",created:0,model:"m",choices:[{index:0,delta:{role:"assistant",content:"Hi"},finish_reason:null}]},
+        {id:"c",object:"chat.completion.chunk",created:0,model:"m",choices:[{index:0,delta:{},finish_reason:"stop"}],usage:{prompt_tokens:1,completion_tokens:1,total_tokens:2}},
+      ]);
+    });
+    await streamCoral(model(api), {messages:[user]}, {apiKey:"k", fetch, maxRetries:0, sessionId:"pi-session-1"} as any).result();
+    expect(fetch).toHaveBeenCalledOnce();
+    return {headers, body};
+  }
+  // Coral groups a conversation's turns by the first session id it finds: a session
+  // header, else the body's prompt_cache_key.
+  it("sends pi's session id on Chat Completions as x-session-affinity", async () => {
+    expect((await requestFor("openai-completions")).headers.get("x-session-affinity")).toBe("pi-session-1");
+  });
+  it("sends pi's session id on Responses as prompt_cache_key", async () => {
+    expect((await requestFor("openai-responses")).body.prompt_cache_key).toBe("pi-session-1");
   });
 });

@@ -3,7 +3,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-import { isRetiredUpstream, updateDeprecatedModels } from "../scripts/update-models.js";
+import { isRetiredUpstream, keepUnlistedModels, updateDeprecatedModels } from "../scripts/update-models.js";
 
 const realFetch = globalThis.fetch;
 const dirs: string[] = [];
@@ -92,6 +92,29 @@ describe("updateDeprecatedModels", () => {
     gateway(["glm-5.3-fp4"]);   // even a retired verdict must not matter here
     await updateDeprecatedModels(ws.modelsPath, [model("glm-5.3-fp4")], "cb_key");
     expect(ws.read()).toEqual({});
+  });
+});
+
+describe("keepUnlistedModels", () => {
+  it("keeps known models an unauthenticated catalog does not list", () => {
+    const known = { "glm-5.3-fast": model("glm-5.3-fast"), "glm-5.3-fp4": model("glm-5.3-fp4") };
+    const fetched = [model("glm-5.3-fast")];
+    expect(keepUnlistedModels(fetched, known, false)).toEqual(["glm-5.3-fp4"]);
+    expect(fetched.map((m) => m.id)).toEqual(["glm-5.3-fast", "glm-5.3-fp4"]);
+  });
+
+  it("treats the per-key /v1/models list as authoritative", () => {
+    const known = { "gone-model": model("gone-model") };
+    const fetched = [model("glm-5.3-fast")];
+    expect(keepUnlistedModels(fetched, known, true)).toEqual([]);
+    expect(fetched.map((m) => m.id)).toEqual(["glm-5.3-fast"]);
+  });
+
+  it("keeps nothing it already has", () => {
+    const known = { "glm-5.3-fast": model("glm-5.3-fast") };
+    const fetched = [model("glm-5.3-fast")];
+    expect(keepUnlistedModels(fetched, known, false)).toEqual([]);
+    expect(fetched.map((m) => m.id)).toEqual(["glm-5.3-fast"]);
   });
 });
 

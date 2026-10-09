@@ -2,7 +2,7 @@
 
 # 🪸 pi-coralbricks-provider
 
-**GLM 5.3, GLM 5.3 Flash & DeepSeek V4.1 Flash through [Coral Bricks](https://www.coralbricks.ai)**
+**GLM 5.3 & DeepSeek V4.1 Flash through [Coral Bricks](https://www.coralbricks.ai)**
 
 _A [pi](https://github.com/earendil-works/pi-coding-agent) provider extension for Coral's OpenAI-compatible inference gateway — up to **1M context** on open models._
 
@@ -22,8 +22,8 @@ Run `bun run test:pi` for offline manifest, catalog, lifecycle and streaming che
 
 ## Features
 
-- **3 reasoning models** from Coral's live catalog — GLM 5.3 FP4, GLM 5.3 Flash, and DeepSeek V4.1 Flash
-- **1M token context** on GLM and DeepSeek, with vision (image input) on GLM 5.3 Flash and DeepSeek V4.1 Flash
+- **2 reasoning models** from Coral's live catalog — GLM 5.3 and DeepSeek V4.1 Flash (the `-fp4` twin slugs Coral still serves are hidden as duplicates)
+- **1M token context** on GLM and DeepSeek, with vision (image input) on DeepSeek V4.1 Flash
 - **OpenAI-compatible API** — standard `/v1/chat/completions`, streaming, and tool calling
 - **Per-family thinking levels** — zai-style `thinking` control for GLM (including a *real* off switch), `reasoning_effort` for DeepSeek V4.1 Flash
 - **Accurate cost tracking** — input, cache-write and output rates mirror Coral's [published pricing](https://www.coralbricks.ai/pricing), and cached reads are **$0 on every model**
@@ -85,9 +85,8 @@ pi
 
 | Model | Context | Vision | Reasoning | Input $/M | Cache Read $/M | Cache Write $/M | Output $/M |
 |-------|---------|--------|-----------|-----------|-----------------|------------------|------------|
-| DeepSeek V4.1 Flash | 1.0M | ✅ | ✅ | $0.30 | — | $0.09 | $1.20 |
-| GLM 5.3 Flash | 1.0M | ✅ | ✅ | $0.15 | — | $0.23 | $0.50 |
-| GLM 5.3 FP4 | 1.0M | ❌ | ✅ | $1.12 | — | $1.68 | $4.40 |
+| DeepSeek V4.1 Flash | 1.0M | ✅ | ✅ | $0.01 | — | $0.09 | $1.20 |
+| GLM 5.3 | 1.0M | ❌ | ✅ | $1.12 | — | $1.68 | $4.40 |
 
 *Costs are per million tokens. Cache Read shows — because Coral bills cached input at **$0** on every model. Prompt tokens Coral has not cached yet are billed once at the Cache Write rate, in place of the Input rate. Prices subject to change — check [Coral's live catalog](https://www.coralbricks.ai/api/public/models).*
 
@@ -196,7 +195,7 @@ Verified against the live gateway:
 | Model | Format | off | low | medium | high | max |
 |-------|--------|-----|-----|--------|------|-----|
 | GLM 5.3 FP4 | `thinking: {type}` + `reasoning_effort` | ✅ | ✅ | — | ✅ | ✅ |
-| GLM 5.3 Flash | `thinking: {type}` + `reasoning_effort` | ✅ | ✅ | — | ✅ | ✅ |
+| GLM 5.3 Flash (retired) | `thinking: {type}` + `reasoning_effort` | ✅ | ✅ | — | ✅ | ✅ |
 | DeepSeek V4.1 Flash | `reasoning_effort` | ✅ | ✅ | — | ✅ | ✅ |
 
 - **GLM** accepts zai-style `thinking: {type: "disabled"}` on Coral — pi's *off* level turns thinking off, though a short preamble of a few dozen tokens can still appear (the upstream Z.ai API has no off at all, so this differs from the canonical Z.ai map).
@@ -214,7 +213,7 @@ Coral's gateway follows the OpenAI Chat Completions API:
 
 ### Patch Overrides & Custom Models
 
-- **`patch.json`** — per-model overrides applied on top of `models.json` (reasoning flags, pricing corrections, compat settings, thinking level maps). Currently carries two entries: GLM 5.3 Flash (reasoning, image input, its thinking level map and compat settings) and DeepSeek V4.1 Flash (reasoning, its thinking level map and compat settings).
+- **`patch.json`** — per-model overrides applied on top of `models.json` (reasoning flags, pricing corrections, compat settings, thinking level maps, `"hidden"`). One entry per model Coral serves: GLM 5.3 and DeepSeek V4.1 Flash carry the reasoning and compat settings, and their `-fp4` twins set `"hidden": true` so `/model` and the table above list each model once.
 - **`custom-models.json`** — full model definitions for models Coral doesn't list. Merged after patch.
 
 Merge order: `[live|cache|embedded] → patch.json → custom-models.json`
@@ -226,7 +225,7 @@ Validated with [synbad](https://github.com/synthetic-lab/synbad) — Synthetic's
 | Model | Unary | Stream | Notes |
 |-------|-------|--------|-------|
 | GLM 5.3 FP4 | 13/13 ✅ | 13/13 ✅ | 5/5 runs |
-| GLM 5.3 Flash | 12/13 ⚠️ | 12/13 ⚠️ | `reasoning/reasoning-parsing` passes 4 of 5 runs; see below |
+| GLM 5.3 Flash (retired) | 12/13 ⚠️ | 12/13 ⚠️ | `reasoning/reasoning-parsing` passes 4 of 5 runs; see below |
 | GPT-OSS 120B (retired) | 12/13 ⚠️ | 12/13 ⚠️ | `tools/parallel-tool` 0 of 5 runs, before Coral retired the model |
 | DeepSeek V4.1 Flash | 12/13 ⚠️ | 12/13 ⚠️ | `tools/octo-list-no-optional-args` passes 1 of 5 runs; see below |
 | Kimi K3 (retired) | 13/13 ✅ | 13/13 ✅ | 5/5 runs, before Coral retired the model |

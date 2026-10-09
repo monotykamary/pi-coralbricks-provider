@@ -1,6 +1,6 @@
 [
   {
-    "id": "deepseek-v4.1-flash-fast-fp4",
+    "id": "deepseek-v4.1-flash-fast",
     "name": "DeepSeek V4.1 Flash",
     "reasoning": false,
     "input": [
@@ -8,7 +8,7 @@
       "image"
     ],
     "cost": {
-      "input": 0.3,
+      "input": 0.01,
       "output": 1.2,
       "cacheRead": 0,
       "cacheWrite": 0.09
@@ -22,18 +22,39 @@
     }
   },
   {
-    "id": "glm-5.3-flash-fp4",
-    "name": "GLM 5.3 Flash",
+    "id": "deepseek-v4.1-flash-fast-fp4",
+    "name": "Deepseek V4.1 Flash Fast Fp4",
     "reasoning": false,
     "input": [
       "text",
       "image"
     ],
     "cost": {
-      "input": 0.15,
-      "output": 0.5,
+      "input": 0.01,
+      "output": 1.2,
       "cacheRead": 0,
-      "cacheWrite": 0.23
+      "cacheWrite": 0.09
+    },
+    "contextWindow": 1048576,
+    "maxTokens": 32768,
+    "compat": {
+      "supportsDeveloperRole": false,
+      "supportsStore": false,
+      "maxTokensField": "max_tokens"
+    }
+  },
+  {
+    "id": "glm-5.3-fast",
+    "name": "GLM 5.3",
+    "reasoning": false,
+    "input": [
+      "text"
+    ],
+    "cost": {
+      "input": 1.12,
+      "output": 4.4,
+      "cacheRead": 0,
+      "cacheWrite": 1.68
     },
     "contextWindow": 1048576,
     "maxTokens": 32768,
@@ -45,8 +66,8 @@
   },
   {
     "id": "glm-5.3-fp4",
-    "name": "GLM 5.3 FP4",
-    "reasoning": true,
+    "name": "Glm 5.3 Fp4",
+    "reasoning": false,
     "input": [
       "text"
     ],
@@ -57,22 +78,11 @@
       "cacheWrite": 1.68
     },
     "contextWindow": 1048576,
-    "maxTokens": 131072,
-    "thinkingLevelMap": {
-      "off": "none",
-      "minimal": null,
-      "low": "low",
-      "medium": null,
-      "high": "high",
-      "xhigh": null,
-      "max": "max"
-    },
+    "maxTokens": 32768,
     "compat": {
-      "supportsStore": false,
       "supportsDeveloperRole": false,
-      "supportsReasoningEffort": true,
-      "maxTokensField": "max_tokens",
-      "thinkingFormat": "zai"
+      "supportsStore": false,
+      "maxTokensField": "max_tokens"
     }
   }
 ]
