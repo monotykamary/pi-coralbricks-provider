@@ -14,6 +14,10 @@
  *    same control-plane data without a key (contextWindow like "1M", inputPerM,
  *    outputPerM). Used when no key is configured or /v1/models fails.
  *
+ * The catalog is a subset: it lists each model's canonical slug, not every
+ * variant enabled for a key, so a catalog run only ever adds or keeps models —
+ * it never delists one (see keepUnlistedModels).
+ *
  * models.json is the source of truth for curated specs — the script preserves
  * existing data and only adds new models with API-derived defaults.
  * Curate models.json manually after new model discovery.
@@ -219,18 +223,38 @@ async function fetchPublicCatalog() {
   return models;
 }
 
-async function fetchModels() {
-  const apiKey = resolveApiKey();
+async function fetchModels(apiKey) {
   if (apiKey) {
     try {
-      return await fetchV1Models(apiKey);
+      return { models: await fetchV1Models(apiKey), authoritative: true };
     } catch (error) {
       console.warn(`⚠ /v1/models failed (${error.message}); falling back to public catalog`);
     }
   } else {
     console.warn('⚠ No API key found (no `coralbricks` credential in ' + AUTH_JSON_PATH + ', CORALBRICKS_API_KEY unset); using the public catalog');
   }
-  return fetchPublicCatalog();
+  return { models: await fetchPublicCatalog(), authoritative: false };
+}
+
+/**
+ * The public catalog is a subset of the per-key /v1/models set: it advertises a
+ * model's canonical slug, not every variant enabled for the key (the -fp4 twins
+ * are listed by /v1/models only). It can vouch for what exists, never for what
+ * is gone, so a non-authoritative fetch keeps every already-known model it does
+ * not list: a keyless run may discover models, it may not delist them. Returns
+ * the ids it kept, in the order they were appended.
+ */
+function keepUnlistedModels(models, existingModelsMap, authoritative) {
+  if (authoritative) return [];
+  const seen = new Set(models.map((m) => m.id));
+  const kept = [];
+  for (const [id, existing] of Object.entries(existingModelsMap)) {
+    if (!seen.has(id)) {
+      models.push(existing);
+      kept.push(id);
+    }
+  }
+  return kept;
 }
 
 // Transform API model → models.json entry
@@ -547,7 +571,8 @@ async function main() {
       return;
     }
 
-    const apiModels = await fetchModels();
+    const apiKey = resolveApiKey();
+    const { models: apiModels, authoritative } = await fetchModels(apiKey);
 
     // Load existing models.json — source of truth for curated specs
     const existingModels = loadJson(MODELS_JSON_PATH);
@@ -562,15 +587,20 @@ async function main() {
       isCatalogShape ? transformCatalogModel(m, existingModelsMap) : transformApiModel(m, existingModelsMap)
     );
 
-    // Live API is authoritative — models absent from API are removed
-    // (embedded data is already used for enrichment in transformApiModel)
+    // Live API is authoritative — models absent from it are removed (embedded
+    // data is already used for enrichment in transformApiModel). A catalog run
+    // is not: keep every known model it does not list.
+    const kept = keepUnlistedModels(models, existingModelsMap, authoritative);
+    if (kept.length > 0) {
+      console.warn(`⚠ Public catalog listed ${kept.length} fewer model(s) than models.json; kept: ${kept.join(', ')}`);
+    }
 
     // Sort by model name
     models.sort((a, b) => a.name.localeCompare(b.name));
 
     // Save models.json (pure API output, no patch/custom baked in)
     // Move delisted models to deprecated-models.json BEFORE models.json is overwritten
-    await updateDeprecatedModels(MODELS_JSON_PATH, models, resolveApiKey());
+    await updateDeprecatedModels(MODELS_JSON_PATH, models, apiKey);
     saveJson(MODELS_JSON_PATH, models);
 
     // Build the README model list: base → patch → custom. Grace-period models stay
@@ -608,4 +638,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToP
   main();
 }
 
-export { isRetiredUpstream, updateDeprecatedModels };
+export { isRetiredUpstream, keepUnlistedModels, updateDeprecatedModels };

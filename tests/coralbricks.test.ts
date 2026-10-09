@@ -275,8 +275,9 @@ describe("embedded model catalog invariants", () => {
     if (glm52) expect(glm52.cost).toMatchObject({ input: 1.12, output: 4.4 });
     // https://www.coralbricks.ai/pricing, 2026-09-22 (slugs renamed -fp4 → -fast, 2026-10)
     expect(byId["glm-5.3-fast"].cost).toMatchObject({ input: 1.12, output: 4.4, cacheWrite: 1.68 });
-    expect(byId["glm-5.3-flash-fast"].cost).toMatchObject({ input: 0.15, output: 0.5, cacheWrite: 0.23 });
+    expect(byId["glm-5.3-fp4"].cost).toMatchObject({ input: 1.12, output: 4.4, cacheWrite: 1.68 });
     expect(byId["deepseek-v4.1-flash-fast"].cost).toMatchObject({ input: 0.3, output: 1.2, cacheWrite: 0.09 });
+    expect(byId["deepseek-v4.1-flash-fast-fp4"].cost).toMatchObject({ input: 0.3, output: 1.2, cacheWrite: 0.09 });
   });
 
   it("gives every effective model reasoning config after patch.json", () => {
@@ -317,11 +318,11 @@ describe("embedded model catalog invariants", () => {
     expect(byId["glm-5.2-fp4"].thinkingLevelMap).toMatchObject({ off: "none", high: "high", max: "max" });
     // GLM 5.3 adds a low effort
     expect(byId["glm-5.3-fast"].thinkingLevelMap).toMatchObject({ off: "none", low: "low", high: "high", max: "max" });
-    // GLM 5.3 Flash: same zai family map; only low/high/max efforts exist upstream
-    expect(byId["glm-5.3-flash-fast"].compat?.thinkingFormat).toBe("zai");
-    expect(byId["glm-5.3-flash-fast"].thinkingLevelMap).toMatchObject({ off: "none", low: "low", high: "high", max: "max" });
-    expect(byId["glm-5.3-flash-fast"].maxTokens).toBe(131072);
-    expect(byId["glm-5.3-flash-fast"].input).toEqual(["text", "image"]);
+    // GLM 5.3 FP4: the same zai family map, and the family's max output
+    expect(byId["glm-5.3-fp4"].compat?.thinkingFormat).toBe("zai");
+    expect(byId["glm-5.3-fp4"].thinkingLevelMap).toMatchObject({ off: "none", low: "low", high: "high", max: "max" });
+    expect(byId["glm-5.3-fp4"].maxTokens).toBe(131072);
+    expect(byId["glm-5.3-fp4"].input).toEqual(["text"]);
     // DeepSeek V4.1 Flash: openai reasoning_effort; reasoning is opt-in, so off sends none
     expect(byId["deepseek-v4.1-flash-fast"].compat?.thinkingFormat).toBe("openai");
     expect(byId["deepseek-v4.1-flash-fast"].compat?.supportsReasoningEffort).toBe(true);
@@ -329,24 +330,29 @@ describe("embedded model catalog invariants", () => {
   });
 
   it("flags vision from the live API flag, with patch.json restoring the -fast rows' image input", () => {
-    // The -fast API rows omit supports_image_input, so patch.json supplies it.
+    // The -fast API rows omit supports_image_input, so patch.json supplies it;
+    // the -fp4 rows report the flag themselves.
     const byId = Object.fromEntries(buildModels(models as any, [], patchData as any).map((m) => [m.id, m]));
     expect(byId["deepseek-v4.1-flash-fast"].input).toContain("image");
-    expect(byId["glm-5.3-flash-fast"].input).toContain("image");
+    expect(byId["deepseek-v4.1-flash-fast-fp4"].input).toContain("image");
     expect(byId["glm-5.3-fast"].input).toEqual(["text"]);
+    expect(byId["glm-5.3-fp4"].input).toEqual(["text"]);
+    // Coral's rows carry no display name for the -fp4 twins, so patch.json names them.
+    expect(byId["glm-5.3-fp4"].name).toBe("GLM 5.3 FP4");
+    expect(byId["deepseek-v4.1-flash-fast-fp4"].name).toBe("DeepSeek V4.1 Flash FP4");
   });
 
-  it("curates every -fast alias and its grace-period -fp4 twin via patch.json; custom models stay empty", () => {
-    // Both id families are keyed: -fast is the live slug, -fp4 the deprecated
-    // twin that must keep its reasoning config through the 14-day grace window.
+  it("curates every live model via patch.json; custom models stay empty", () => {
+    // Coral's rows carry no reasoning or display name, so every id in
+    // models.json needs a patch entry. The -fp4 twins answer 200 and stay in the
+    // per-key list; the retired glm-5.3-flash-* slugs are gone from both files.
     expect(Object.keys(patchData)).toEqual([
       "deepseek-v4.1-flash-fast",
       "deepseek-v4.1-flash-fast-fp4",
       "glm-5.3-fast",
       "glm-5.3-fp4",
-      "glm-5.3-flash-fast",
-      "glm-5.3-flash-fp4",
     ]);
+    expect([...Object.keys(patchData)].sort()).toEqual(modelsData.map((m) => m.id).sort());
     expect(customModelsData).toEqual([]);
   });
 });
