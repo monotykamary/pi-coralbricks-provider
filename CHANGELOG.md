@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add opt-in Responses parking (`"park": true` or `/coralbricks-settings`). Turns are stored and chained with `previous_response_id`, sending only new items, with a full-replay fallback when the history no longer matches or Coral lost the parent.
+
 ## 1.0.21
 
 - Pin Pi SDK development dependencies to 1.0.0 while retaining wildcard host peers.

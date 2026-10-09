@@ -4,7 +4,7 @@ import path from "node:path";
 import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export type CoralApi = "chat-completions" | "responses";
-export interface CoralConfig { api: CoralApi }
+export interface CoralConfig { api: CoralApi; park: boolean }
 
 export function configPath(): string {
   return path.join(getAgentDir(), "extensions", "coralbricks.json");
@@ -23,16 +23,16 @@ function readRawConfig(): Record<string, unknown> {
 
 export function loadConfig(): CoralConfig {
   try {
-    return { api: readRawConfig().api === "responses" ? "responses" : "chat-completions" };
+    const raw = readRawConfig();
+    return { api: raw.api === "responses" ? "responses" : "chat-completions", park: raw.park === true };
   } catch {
-    return { api: "chat-completions" };
+    return { api: "chat-completions", park: false };
   }
 }
 
 /** Preserve unrelated fields; never overwrite malformed settings. */
-export function saveApi(api: CoralApi): void {
-  const raw = readRawConfig();
-  raw.api = api;
+export function saveConfig(patch: Partial<CoralConfig>): void {
+  const raw = { ...readRawConfig(), ...patch };
   const file = configPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temporary = `${file}.${randomUUID()}.tmp`;
@@ -44,35 +44,49 @@ export function saveApi(api: CoralApi): void {
   }
 }
 
+export function saveApi(api: CoralApi): void {
+  saveConfig({ api });
+}
+
+const PARK_DESCRIPTION = "Responses only. Stores each response on Coral (store:true) and sends only new items with previous_response_id. Falls back to a full replay when the chain does not match.";
+
 export function registerSettingsCommand(
   pi: ExtensionAPI,
   getConfig: () => CoralConfig,
   apply: (config: CoralConfig) => void,
 ): void {
   pi.registerCommand("coralbricks-settings", {
-    description: "Configure CoralBricks API: Chat Completions or opt-in Responses",
+    description: "Configure CoralBricks API (Chat Completions or opt-in Responses) and Responses parking",
     async handler(_args, ctx) {
       if (!ctx.hasUI) {
         ctx.ui.notify("/coralbricks-settings requires a UI (TUI or GUI).", "error");
         return;
       }
       const values: CoralApi[] = ["chat-completions", "responses"];
-      const change = (value: string): boolean => {
-        if (!values.includes(value as CoralApi)) return false;
+      const parkValues = ["off", "on"];
+      const change = (id: string, value: string): boolean => {
+        let patch: Partial<CoralConfig>;
+        if (id === "api" && values.includes(value as CoralApi)) patch = { api: value as CoralApi };
+        else if (id === "park" && parkValues.includes(value)) patch = { park: value === "on" };
+        else return false;
         try {
-          saveApi(value as CoralApi);
+          saveConfig(patch);
         } catch {
           ctx.ui.notify(`Could not save ${configPath()}. Check its JSON and permissions; API unchanged.`, "error");
           return false;
         }
-        apply({ api: value as CoralApi });
-        ctx.ui.notify(`CoralBricks API: ${value} — applies to the next request.`, "info");
+        const next = { ...getConfig(), ...patch };
+        apply(next);
+        const label = id === "api" ? `CoralBricks API: ${value}` : `CoralBricks parking: ${value}`;
+        ctx.ui.notify(`${label} — applies to the next request.`, "info");
         return true;
       };
 
       if (ctx.mode !== "tui") {
         const selected = await ctx.ui.select(`CoralBricks API (current: ${getConfig().api})`, values);
-        if (selected !== undefined) change(selected);
+        if (selected === undefined || !change("api", selected) || selected !== "responses") return;
+        const park = await ctx.ui.select(`Park Responses turns with previous_response_id? (current: ${getConfig().park ? "on" : "off"})`, parkValues);
+        if (park !== undefined) change("park", park);
         return;
       }
 
@@ -87,12 +101,19 @@ export function registerSettingsCommand(
           {
             id: "api",
             label: "API surface",
-            description: "Chat Completions is the default. Responses is opt-in, replays full history with store:false; no server-side threading or background jobs.",
+            description: "Chat Completions is the default. Responses is opt-in; it replays full history with store:false unless parking is on.",
             currentValue: getConfig().api,
             values,
           },
-        ], 3, getSettingsListTheme(), (_id, value) => {
-          if (!change(value)) list.updateValue("api", getConfig().api);
+          {
+            id: "park",
+            label: "Park Responses turns",
+            description: PARK_DESCRIPTION,
+            currentValue: getConfig().park ? "on" : "off",
+            values: parkValues,
+          },
+        ], 3, getSettingsListTheme(), (id, value) => {
+          if (!change(id, value)) list.updateValue(id, id === "api" ? getConfig().api : getConfig().park ? "on" : "off");
         }, () => done(), { enableSearch: true });
         container.addChild(list);
         container.addChild(border());
