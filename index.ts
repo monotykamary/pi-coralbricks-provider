@@ -469,8 +469,13 @@ export function streamCoral(
   const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
   const { reasoning: _reasoning, ...streamOptions } = options ?? {};
 
+  // pi-ai's Chat Completions client sends the pi session id (x-session-affinity)
+  // only when the model opts in, and only OpenRouter does by default, so Coral saw
+  // no session id on Completions traffic. Coral uses it to group a conversation's
+  // turns; the Responses client already sends it unconditionally.
+  const compat = { ...model.compat, sendSessionAffinityHeaders: true };
   const stream = model.api === "openai-responses" ? streamOpenAIResponses : streamOpenAICompletions;
-  return stream(model, context, {
+  return stream({ ...model, compat }, context, {
     ...streamOptions,
     reasoningEffort,
     apiKey,
