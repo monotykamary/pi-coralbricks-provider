@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.30
+
+- Send the pi session id to Coral on every route: the `x-coral-session` header on Chat Completions and Responses, and `prompt_cache_key` in Completions bodies, where pi-ai omits it for non-OpenAI hosts. Coral reads the session's prompt cache from either signal alone (verified live); `cacheRetention: "none"` still omits the body key.
+
 ## 1.0.29
 
 - Add opt-in Responses parking (`"park": true` or `/coralbricks-settings`). Turns are stored and chained with `previous_response_id`, sending only new items, with a full-replay fallback when the history no longer matches or Coral lost the parent.
