@@ -347,6 +347,7 @@ function applyPatch(model, patch) {
     thinkingLevelMap: model.thinkingLevelMap ? { ...model.thinkingLevelMap } : undefined,
   };
   if (patch.name !== undefined) result.name = patch.name;
+  if (patch.hidden !== undefined) result.hidden = patch.hidden;
   if (patch.reasoning !== undefined) result.reasoning = patch.reasoning;
   if (patch.input !== undefined) result.input = patch.input;
   if (patch.contextWindow !== undefined) result.contextWindow = patch.contextWindow;
@@ -400,7 +401,11 @@ function buildModels(baseModels, customModels, patchData) {
       modelMap.set(model.id, model);
     }
   }
-  return Array.from(modelMap.values());
+  // Mirrors index.ts buildModels: hidden models are served by Coral but kept out
+  // of the catalog the provider offers, so the README table skips them too.
+  return Array.from(modelMap.values())
+    .filter((m) => !m.hidden)
+    .map(({ hidden: _hidden, ...model }) => model);
 }
 
 // README generation

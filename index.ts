@@ -73,10 +73,13 @@ interface JsonModel {
     supportsStrictMode?: boolean;
     requiresReasoningContentOnAssistantMessages?: boolean;
   };
+  /** Curation-only (patch.json): keep a served model out of the catalog. */
+  hidden?: boolean;
 }
 
 interface PatchEntry {
   name?: string;
+  hidden?: boolean;
   reasoning?: boolean;
   input?: ("text" | "image")[];
   cost?: {
@@ -106,6 +109,7 @@ function applyPatch(model: JsonModel, patch: PatchEntry): JsonModel {
   };
 
   if (patch.name !== undefined) result.name = patch.name;
+  if (patch.hidden !== undefined) result.hidden = patch.hidden;
   if (patch.reasoning !== undefined) result.reasoning = patch.reasoning;
   if (patch.input !== undefined) result.input = patch.input;
   if (patch.contextWindow !== undefined) result.contextWindow = patch.contextWindow;
@@ -166,7 +170,11 @@ function buildModels(base: JsonModel[], custom: JsonModel[], patch: PatchData): 
     }
   }
 
-  return Array.from(modelMap.values());
+  // Hidden models stay out of the registered catalog — and therefore out of
+  // `/model` — while `models.json` keeps mirroring what Coral serves for the key.
+  return Array.from(modelMap.values())
+    .filter((m) => !m.hidden)
+    .map(({ hidden: _hidden, ...model }) => model);
 }
 
 // Stale-While-Revalidate Model Sync

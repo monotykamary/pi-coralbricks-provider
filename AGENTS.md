@@ -16,7 +16,7 @@ When a model needs overrides, new properties, or corrections, edit the appropria
 
 | File | Purpose |
 |------|---------|
-| `patch.json` | Per-model overrides keyed by model ID. Add reasoning flags, compat settings, pricing corrections, thinking level maps, etc. Applied on top of `models.json` at runtime and for README generation. |
+| `patch.json` | Per-model overrides keyed by model ID. Add reasoning flags, compat settings, pricing corrections, thinking level maps, etc. Applied on top of `models.json` at runtime and for README generation. `"hidden": true` drops a model Coral still serves from the catalog and the README table (e.g. the `-fp4` duplicates of the `-fast` slugs). |
 | `custom-models.json` | Models that don't exist in the provider API (hidden models, router endpoints, cross-provider aliases). Merged after patch. Format: array of full model objects (same schema as `models.json` entries). |
 | `index.ts` | Provider extension code. |
 | `scripts/update-models.js` | The sync script itself (edit only if changing how models are fetched/transformed). |

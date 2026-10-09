@@ -8,6 +8,7 @@
   },
   "deepseek-v4.1-flash-fast-fp4": {
     "name": "DeepSeek V4.1 Flash FP4",
+    "hidden": true,
     "reasoning": true,
     "input": ["text", "image"],
     "thinkingLevelMap": { "off": "none", "minimal": null, "low": "low", "medium": null, "high": "high", "xhigh": null, "max": "max" },
@@ -23,6 +24,7 @@
   },
   "glm-5.3-fp4": {
     "name": "GLM 5.3 FP4",
+    "hidden": true,
     "reasoning": true,
     "thinkingLevelMap": { "off": "none", "minimal": null, "low": "low", "medium": null, "high": "high", "xhigh": null, "max": "max" },
     "maxTokens": 131072,

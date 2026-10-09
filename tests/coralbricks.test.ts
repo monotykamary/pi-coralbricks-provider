@@ -247,6 +247,62 @@ describe("embedded model catalog invariants", () => {
     }
   });
 
+  it("offers only the canonical -fast slugs, hiding the served -fp4 duplicates", () => {
+    // models.json mirrors the per-key /v1/models set, which serves both variants…
+    expect(models.map((m) => m.id).sort()).toEqual([
+      "deepseek-v4.1-flash-fast",
+      "deepseek-v4.1-flash-fast-fp4",
+      "glm-5.3-fast",
+      "glm-5.3-fp4",
+    ]);
+    // …while the provider catalog (what pi's /model lists) keeps them out, and
+    // drops the flag itself so it never reaches pi.
+    const effective = buildModels(models as any, customModelsData as any, patchData as any);
+    expect(effective.map((m) => m.id)).toEqual(["deepseek-v4.1-flash-fast", "glm-5.3-fast"]);
+    expect(effective.every((m) => (m as { hidden?: boolean }).hidden === undefined)).toBe(true);
+  });
+
+  it("gives every -fast slug the reasoning settings its legacy -fp4 id carried", () => {
+    // The -fp4 ids were the curated originals (models.json + patch.json at
+    // 4ce2b3d). When Coral served the -fast slugs instead, the new API rows
+    // arrived with no reasoning at all, so the curation had to be re-keyed —
+    // this pins the settings each -fast slug must keep.
+    const legacy = {
+      "deepseek-v4.1-flash-fast": {
+        reasoning: true,
+        input: ["text", "image"],
+        maxTokens: 32768,
+        thinkingLevelMap: { off: "none", minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max" },
+        compat: { supportsReasoningEffort: true, thinkingFormat: "openai" },
+        cacheWrite: 0.09,
+      },
+      "glm-5.3-fast": {
+        reasoning: true,
+        input: ["text"],
+        maxTokens: 131072,
+        thinkingLevelMap: { off: "none", minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max" },
+        compat: { supportsReasoningEffort: true, thinkingFormat: "zai" },
+        cacheWrite: 1.68,
+      },
+    } as const;
+    const effective = buildModels(models as any, [], patchData as any);
+    for (const [id, expected] of Object.entries(legacy)) {
+      const model = effective.find((m) => m.id === id);
+      expect(model).toBeDefined();
+      expect(model!.reasoning).toBe(expected.reasoning);
+      expect(model!.input).toEqual(expected.input);
+      expect(model!.maxTokens).toBe(expected.maxTokens);
+      expect(model!.thinkingLevelMap).toEqual(expected.thinkingLevelMap);
+      expect(model!.cost.cacheWrite).toBe(expected.cacheWrite);
+      expect(model!.compat).toMatchObject({
+        ...expected.compat,
+        supportsStore: false,
+        supportsDeveloperRole: false,
+        maxTokensField: "max_tokens",
+      });
+    }
+  });
+
   it("has well-formed costs with free cached reads and a cache-write rate", () => {
     for (const m of models) {
       for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
@@ -275,9 +331,7 @@ describe("embedded model catalog invariants", () => {
     if (glm52) expect(glm52.cost).toMatchObject({ input: 1.12, output: 4.4 });
     // https://www.coralbricks.ai/pricing, 2026-09-22 (slugs renamed -fp4 → -fast, 2026-10)
     expect(byId["glm-5.3-fast"].cost).toMatchObject({ input: 1.12, output: 4.4, cacheWrite: 1.68 });
-    expect(byId["glm-5.3-fp4"].cost).toMatchObject({ input: 1.12, output: 4.4, cacheWrite: 1.68 });
     expect(byId["deepseek-v4.1-flash-fast"].cost).toMatchObject({ input: 0.3, output: 1.2, cacheWrite: 0.09 });
-    expect(byId["deepseek-v4.1-flash-fast-fp4"].cost).toMatchObject({ input: 0.3, output: 1.2, cacheWrite: 0.09 });
   });
 
   it("gives every effective model reasoning config after patch.json", () => {
@@ -318,11 +372,7 @@ describe("embedded model catalog invariants", () => {
     expect(byId["glm-5.2-fp4"].thinkingLevelMap).toMatchObject({ off: "none", high: "high", max: "max" });
     // GLM 5.3 adds a low effort
     expect(byId["glm-5.3-fast"].thinkingLevelMap).toMatchObject({ off: "none", low: "low", high: "high", max: "max" });
-    // GLM 5.3 FP4: the same zai family map, and the family's max output
-    expect(byId["glm-5.3-fp4"].compat?.thinkingFormat).toBe("zai");
-    expect(byId["glm-5.3-fp4"].thinkingLevelMap).toMatchObject({ off: "none", low: "low", high: "high", max: "max" });
-    expect(byId["glm-5.3-fp4"].maxTokens).toBe(131072);
-    expect(byId["glm-5.3-fp4"].input).toEqual(["text"]);
+    expect(byId["glm-5.3-fast"].maxTokens).toBe(131072);
     // DeepSeek V4.1 Flash: openai reasoning_effort; reasoning is opt-in, so off sends none
     expect(byId["deepseek-v4.1-flash-fast"].compat?.thinkingFormat).toBe("openai");
     expect(byId["deepseek-v4.1-flash-fast"].compat?.supportsReasoningEffort).toBe(true);
@@ -330,22 +380,17 @@ describe("embedded model catalog invariants", () => {
   });
 
   it("flags vision from the live API flag, with patch.json restoring the -fast rows' image input", () => {
-    // The -fast API rows omit supports_image_input, so patch.json supplies it;
-    // the -fp4 rows report the flag themselves.
+    // The -fast API rows omit supports_image_input, so patch.json supplies it.
     const byId = Object.fromEntries(buildModels(models as any, [], patchData as any).map((m) => [m.id, m]));
     expect(byId["deepseek-v4.1-flash-fast"].input).toContain("image");
-    expect(byId["deepseek-v4.1-flash-fast-fp4"].input).toContain("image");
     expect(byId["glm-5.3-fast"].input).toEqual(["text"]);
-    expect(byId["glm-5.3-fp4"].input).toEqual(["text"]);
-    // Coral's rows carry no display name for the -fp4 twins, so patch.json names them.
-    expect(byId["glm-5.3-fp4"].name).toBe("GLM 5.3 FP4");
-    expect(byId["deepseek-v4.1-flash-fast-fp4"].name).toBe("DeepSeek V4.1 Flash FP4");
   });
 
-  it("curates every live model via patch.json; custom models stay empty", () => {
+  it("curates every live model via patch.json, hiding the -fp4 duplicates", () => {
     // Coral's rows carry no reasoning or display name, so every id in
     // models.json needs a patch entry. The -fp4 twins answer 200 and stay in the
-    // per-key list; the retired glm-5.3-flash-* slugs are gone from both files.
+    // per-key list but are hidden as duplicates; the retired glm-5.3-flash-*
+    // slugs are gone from both files.
     expect(Object.keys(patchData)).toEqual([
       "deepseek-v4.1-flash-fast",
       "deepseek-v4.1-flash-fast-fp4",
@@ -354,6 +399,11 @@ describe("embedded model catalog invariants", () => {
     ]);
     expect([...Object.keys(patchData)].sort()).toEqual(modelsData.map((m) => m.id).sort());
     expect(customModelsData).toEqual([]);
+    const hidden = Object.entries(patchData as Record<string, any>)
+      .filter(([, entry]) => entry.hidden === true)
+      .map(([id]) => id)
+      .sort();
+    expect(hidden).toEqual(["deepseek-v4.1-flash-fast-fp4", "glm-5.3-fp4"]);
   });
 });
 
