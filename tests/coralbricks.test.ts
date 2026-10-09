@@ -24,7 +24,8 @@ const v1DeepSeekRow = {
   owned_by: "coralbricks",
   context_length: 1048576,
   created: 1789000000,
-  pricing: { cache_write_multiple: 0.3, cache_write_per_m: 0.09, cached_input_per_m: 0, input_per_m: 0.3, output_per_m: 1.2 },
+  // Since 2026-10-08: fixed prices, cache_write_per_m is the cache write ON TOP of input.
+  pricing: { cache_write_per_m: 0.08, cached_input_per_m: 0, input_per_m: 0.01, output_per_m: 1.2 },
   supports_chat: true,
   supports_image_input: true,
   supports_tools: true,
@@ -49,7 +50,7 @@ describe("transformApiModel (/v1/models rows)", () => {
     const m = transformApiModel(v1DeepSeekRow)!;
     expect(m.id).toBe("deepseek-v4.1-flash-fast-fp4");
     expect(m.input).toEqual(["text", "image"]);
-    expect(m.cost).toEqual({ input: 0.3, output: 1.2, cacheRead: 0, cacheWrite: 0.09 });
+    expect(m.cost).toEqual({ input: 0.01, output: 1.2, cacheRead: 0, cacheWrite: 0.09 });
     expect(m.contextWindow).toBe(1048576);
     expect(m.compat?.supportsStore).toBe(false);
     expect(m.compat?.supportsDeveloperRole).toBe(false);
@@ -61,8 +62,11 @@ describe("transformApiModel (/v1/models rows)", () => {
     expect(m.cost.cacheRead).toBe(0);
   });
 
-  it("bills cache writes at cache_write_per_m, and 0 when a row omits it", () => {
+  it("prices a written token at input + cache_write_per_m, and 0 when a row omits it", () => {
     expect(transformApiModel(v1DeepSeekRow)!.cost.cacheWrite).toBe(0.09);
+    const glm = { ...v1DeepSeekRow, id: "glm-5.3-fast",
+      pricing: { cache_write_per_m: 0.56, cached_input_per_m: 0, input_per_m: 1.12, output_per_m: 4.4 } };
+    expect(transformApiModel(glm)!.cost.cacheWrite).toBe(1.68);
     const { cache_write_per_m: _omitted, ...pricing } = v1DeepSeekRow.pricing;
     expect(transformApiModel({ ...v1DeepSeekRow, pricing })!.cost.cacheWrite).toBe(0);
   });
@@ -182,7 +186,8 @@ describe("mergeWithEmbedded (live vs curated)", () => {
     // buildModels; mergeWithEmbedded only proves the embedded curation wins here.
     const merged = mergeWithEmbedded([live], modelsData as any);
     const glm = merged.find((m) => m.id === "glm-5.3-fast")!;
-    expect(glm.cost).toEqual({ input: 5, output: 20, cacheRead: 0, cacheWrite: 2 });
+    // cache_write_per_m (2) is on top of input (5): a written token costs 7.
+    expect(glm.cost).toEqual({ input: 5, output: 20, cacheRead: 0, cacheWrite: 7 });
     expect(glm.input).toEqual(["text"]);
   });
 
@@ -331,7 +336,8 @@ describe("embedded model catalog invariants", () => {
     if (glm52) expect(glm52.cost).toMatchObject({ input: 1.12, output: 4.4 });
     // https://www.coralbricks.ai/pricing, 2026-09-22 (slugs renamed -fp4 → -fast, 2026-10)
     expect(byId["glm-5.3-fast"].cost).toMatchObject({ input: 1.12, output: 4.4, cacheWrite: 1.68 });
-    expect(byId["deepseek-v4.1-flash-fast"].cost).toMatchObject({ input: 0.3, output: 1.2, cacheWrite: 0.09 });
+    // 2026-10-08: DeepSeek $0.01 input + $0.08 cache write on top = $0.09 per written token.
+    expect(byId["deepseek-v4.1-flash-fast"].cost).toMatchObject({ input: 0.01, output: 1.2, cacheWrite: 0.09 });
   });
 
   it("gives every effective model reasoning config after patch.json", () => {
