@@ -166,6 +166,13 @@ function saveJson(filePath, data) {
   console.log(`✓ Saved ${path.basename(filePath)}`);
 }
 
+// Coral states the cache write ON TOP of input (2026-10-08); pi's cacheWrite is the full
+// price of a written token, input + it. 0 when the row has no cache-write rate.
+function writtenTokenCost(input, cacheWriteOnTop) {
+  if (typeof cacheWriteOnTop !== 'number' || !Number.isFinite(cacheWriteOnTop)) return 0;
+  return Math.round((input + cacheWriteOnTop) * 1e6) / 1e6;
+}
+
 function toNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
@@ -274,7 +281,9 @@ function transformApiModel(apiModel, existingModelsMap) {
     if (typeof pricing.input_per_m === 'number') existing.cost.input = pricing.input_per_m;
     if (typeof pricing.output_per_m === 'number') existing.cost.output = pricing.output_per_m;
     existing.cost.cacheRead = toNumber(pricing.cached_input_per_m);
-    if (typeof pricing.cache_write_per_m === 'number') existing.cost.cacheWrite = pricing.cache_write_per_m;
+    if (typeof pricing.cache_write_per_m === 'number') {
+      existing.cost.cacheWrite = writtenTokenCost(existing.cost.input, pricing.cache_write_per_m);
+    }
     existing.input = input;
     return existing;
   }
@@ -289,7 +298,7 @@ function transformApiModel(apiModel, existingModelsMap) {
       input: toNumber(pricing.input_per_m),
       output: toNumber(pricing.output_per_m),
       cacheRead: toNumber(pricing.cached_input_per_m),
-      cacheWrite: toNumber(pricing.cache_write_per_m),
+      cacheWrite: writtenTokenCost(toNumber(pricing.input_per_m), pricing.cache_write_per_m),
     },
     contextWindow,
     maxTokens,
@@ -311,6 +320,9 @@ function transformCatalogModel(entry, existingModelsMap) {
     if (contextWindow) existing.contextWindow = contextWindow;
     if (typeof entry.inputPerM === 'number') existing.cost.input = entry.inputPerM;
     if (typeof entry.outputPerM === 'number') existing.cost.output = entry.outputPerM;
+    if (typeof entry.cacheWritePerM === 'number') {
+      existing.cost.cacheWrite = writtenTokenCost(existing.cost.input, entry.cacheWritePerM);
+    }
     return existing;
   }
 
@@ -323,7 +335,7 @@ function transformCatalogModel(entry, existingModelsMap) {
       input: toNumber(entry.inputPerM),
       output: toNumber(entry.outputPerM),
       cacheRead: 0,
-      cacheWrite: 0,
+      cacheWrite: writtenTokenCost(toNumber(entry.inputPerM), entry.cacheWritePerM),
     },
     contextWindow,
     maxTokens,

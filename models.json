@@ -8,7 +8,7 @@
       "image"
     ],
     "cost": {
-      "input": 0.3,
+      "input": 0.01,
       "output": 1.2,
       "cacheRead": 0,
       "cacheWrite": 0.09
@@ -30,7 +30,7 @@
       "image"
     ],
     "cost": {
-      "input": 0.3,
+      "input": 0.01,
       "output": 1.2,
       "cacheRead": 0,
       "cacheWrite": 0.09
